@@ -216,3 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Python-generated files
+__pycache__/
+*.py[cod]
+
+# Virtual environment and secrets
+.venv/
+.env
+
+# Uploaded meeting recordings
+backend/storage/uploads/*
+!backend/storage/uploads/.gitkeep
