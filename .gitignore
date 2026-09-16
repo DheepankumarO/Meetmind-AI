@@ -228,3 +228,7 @@ __pycache__/
 # Uploaded meeting recordings
 backend/storage/uploads/*
 !backend/storage/uploads/.gitkeep
+
+# Generated transcription-ready audio
+backend/storage/audio/*
+!backend/storage/audio/.gitkeep
