@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from backend.app.services.audio_extractor import extract_audio
@@ -5,6 +7,7 @@ from backend.app.services.file_storage import (
     UPLOAD_DIRECTORY,
     save_upload,
 )
+from backend.app.services.transcription import transcribe_audio
 
 
 router = APIRouter(
@@ -16,7 +19,7 @@ router = APIRouter(
 @router.post("/upload")
 async def upload_meeting(
     file: UploadFile = File(...),
-) -> dict[str, str | int | None]:
+) -> dict[str, str | int | float | None]:
     upload_result = await save_upload(file)
 
     stored_filename = upload_result["stored_filename"]
@@ -28,8 +31,22 @@ async def upload_meeting(
         )
 
     uploaded_path = UPLOAD_DIRECTORY / stored_filename
-    audio_path = await extract_audio(uploaded_path)
+    audio_path: Path | None = None
 
-    upload_result["audio_filename"] = audio_path.name
+    try:
+        audio_path = await extract_audio(uploaded_path)
+        transcription_result = await transcribe_audio(audio_path)
 
-    return upload_result
+        return {
+            "status": "processed",
+            "original_filename": upload_result["original_filename"],
+            "content_type": upload_result["content_type"],
+            "size_bytes": upload_result["size_bytes"],
+            **transcription_result,
+        }
+
+    finally:
+        uploaded_path.unlink(missing_ok=True)
+
+        if audio_path is not None:
+            audio_path.unlink(missing_ok=True)
