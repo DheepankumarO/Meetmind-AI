@@ -1,4 +1,5 @@
 import asyncio
+import gc
 from fastapi import HTTPException
 from functools import lru_cache
 from pathlib import Path
@@ -63,3 +64,7 @@ async def transcribe_audio(
             status_code=500,
             detail="Local transcription failed.",
         ) from error
+
+    finally:
+        get_whisper_model.cache_clear()
+        gc.collect()
