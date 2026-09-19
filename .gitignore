@@ -232,3 +232,7 @@ backend/storage/uploads/*
 # Generated transcription-ready audio
 backend/storage/audio/*
 !backend/storage/audio/.gitkeep
+
+# Local SQLite database
+backend/storage/*.db
+backend/storage/*.db-*

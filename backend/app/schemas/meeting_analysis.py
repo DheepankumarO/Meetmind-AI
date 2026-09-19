@@ -1,4 +1,7 @@
-from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ActionItem(BaseModel):
@@ -31,3 +34,18 @@ class MeetingAnalysis(BaseModel):
         default_factory=list,
         description="Tasks assigned during the meeting.",
     )
+
+
+class MeetingRecord(MeetingAnalysis):
+    model_config = ConfigDict(from_attributes=True)
+
+    status: Literal["processed"] = "processed"
+    id: int
+    original_filename: str
+    content_type: str | None
+    size_bytes: int
+    transcript: str
+    language: str
+    language_probability: float
+    duration_seconds: float
+    created_at: datetime
