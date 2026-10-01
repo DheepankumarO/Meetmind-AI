@@ -21,37 +21,35 @@ function MeetingHistory({
   const [error, setError] = useState<string | null>(null);
 
 
-  useEffect(() => {
+    useEffect(() => {
     let cancelled = false;
 
-    setIsLoading(true);
-    setError(null);
-
     getMeetings()
-      .then((savedMeetings) => {
+        .then((savedMeetings) => {
         if (!cancelled) {
-          setMeetings(savedMeetings);
+            setMeetings(savedMeetings);
+            setError(null);
         }
-      })
-      .catch((requestError) => {
+        })
+        .catch((requestError) => {
         if (!cancelled) {
-          setError(
+            setError(
             requestError instanceof Error
-              ? requestError.message
-              : "Meeting history could not be loaded.",
-          );
+                ? requestError.message
+                : "Meeting history could not be loaded.",
+            );
         }
-      })
-      .finally(() => {
+        })
+        .finally(() => {
         if (!cancelled) {
-          setIsLoading(false);
+            setIsLoading(false);
         }
-      });
+        });
 
     return () => {
-      cancelled = true;
+        cancelled = true;
     };
-  }, [refreshKey]);
+    }, [refreshKey]);
 
 
   return (
