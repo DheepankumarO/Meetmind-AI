@@ -3,12 +3,9 @@ import gc
 from fastapi import HTTPException
 from functools import lru_cache
 from pathlib import Path
-
 from faster_whisper import WhisperModel
 
-
 MODEL_SIZE = "small.en"
-
 
 @lru_cache(maxsize=1)
 def get_whisper_model() -> WhisperModel:
@@ -17,7 +14,6 @@ def get_whisper_model() -> WhisperModel:
         device="cpu",
         compute_type="int8",
     )
-
 
 def transcribe_sync(audio_path: Path) -> dict[str, str | float]:
     model = get_whisper_model()
@@ -48,7 +44,6 @@ def transcribe_sync(audio_path: Path) -> dict[str, str | float]:
             2,
         ),
     }
-
 
 async def transcribe_audio(
     audio_path: Path,

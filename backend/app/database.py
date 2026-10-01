@@ -1,5 +1,4 @@
 from pathlib import Path
-
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -10,7 +9,6 @@ STORAGE_DIRECTORY = (
 
 DATABASE_PATH = STORAGE_DIRECTORY / "meetmind.db"
 DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
-
 
 class Base(DeclarativeBase):
     pass

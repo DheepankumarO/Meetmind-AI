@@ -1,0 +1,62 @@
+import type { MeetingRecord } from "../types/meeting";
+
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ??
+  "http://127.0.0.1:8000";
+
+
+type HealthResponse = {
+  status: string;
+};
+
+
+async function request<T>(
+  endpoint: string,
+  options?: RequestInit,
+): Promise<T> {
+  const response = await fetch(
+    `${API_BASE_URL}${endpoint}`,
+    options,
+  );
+
+  if (!response.ok) {
+    let message = `Request failed with status ${response.status}`;
+
+    try {
+      const errorBody = await response.json();
+
+      if (typeof errorBody.detail === "string") {
+        message = errorBody.detail;
+      }
+    } catch {
+      // The server did not provide a JSON error response.
+    }
+
+    throw new Error(message);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+
+export function getHealth(): Promise<HealthResponse> {
+  return request<HealthResponse>("/health");
+}
+
+
+export function uploadMeeting(
+  file: File,
+): Promise<MeetingRecord> {
+  const formData = new FormData();
+
+  formData.append("file", file);
+
+  return request<MeetingRecord>(
+    "/meetings/upload",
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+}

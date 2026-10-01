@@ -1,14 +1,12 @@
 import asyncio
 import subprocess
+
 from pathlib import Path
-
 from fastapi import HTTPException
-
 
 AUDIO_DIRECTORY = (
     Path(__file__).resolve().parents[2] / "storage" / "audio"
 )
-
 
 async def extract_audio(input_path: Path) -> Path:
     AUDIO_DIRECTORY.mkdir(parents=True, exist_ok=True)
@@ -49,7 +47,6 @@ async def extract_audio(input_path: Path) -> Path:
 
     if result.returncode != 0:
         output_path.unlink(missing_ok=True)
-
         raise HTTPException(
             status_code=422,
             detail=(
