@@ -12,7 +12,7 @@ import {
 import type { MeetingRecord } from "./types/meeting";
 
 import "./App.css";
-
+import MeetingHistory from "./components/MeetingHistory";
 
 type ConnectionStatus =
   | "checking"
@@ -41,7 +41,8 @@ function App() {
 
   const [meeting, setMeeting] =
     useState<MeetingRecord | null>(null);
-
+  const [historyRefreshKey, setHistoryRefreshKey] =
+    useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -108,6 +109,7 @@ function App() {
     try {
       const result = await uploadMeeting(selectedFile);
       setMeeting(result);
+        setHistoryRefreshKey((currentKey) => currentKey + 1);
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -336,6 +338,17 @@ function App() {
           )}
         </section>
       </section>
+      <MeetingHistory
+        refreshKey={historyRefreshKey}
+        onSelect={(savedMeeting) => {
+          setMeeting(savedMeeting);
+
+          window.scrollTo({
+            top: 0,
+            behavior: "smooth",
+          });
+        }}
+      />
     </main>
   );
 }

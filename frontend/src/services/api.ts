@@ -60,3 +60,16 @@ export function uploadMeeting(
     },
   );
 }
+
+export function getMeetings(): Promise<MeetingRecord[]> {
+  return request<MeetingRecord[]>("/meetings");
+}
+
+
+export function getMeeting(
+  meetingId: number,
+): Promise<MeetingRecord> {
+  return request<MeetingRecord>(
+    `/meetings/${meetingId}`,
+  );
+}
