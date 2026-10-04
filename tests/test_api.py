@@ -61,7 +61,7 @@ def test_upload_rejects_unsupported_file(
     assert response.json() == {
         "detail": "Unsupported file type: .txt",
     }
-    
+
 def test_missing_meeting_audio_returns_404(
     client: TestClient,
 ) -> None:

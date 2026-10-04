@@ -66,7 +66,7 @@ async def upload_meeting(
             audio_path,
             uploaded_path.stem,
         )
-        
+
         saved_meeting = await save_meeting(
             original_filename=str(
                 upload_result["original_filename"],
@@ -138,7 +138,7 @@ async def get_meeting_audio(
     path=playback_path,
     media_type="audio/mpeg",
 )
-    
+
 @router.get(
     "/{meeting_id}",
     response_model=MeetingRecord,
