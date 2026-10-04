@@ -239,3 +239,7 @@ backend/storage/*.db-*
 
 # Pytest-generated cache
 .pytest_cache/
+
+# Compressed meeting playback audio
+backend/storage/playback/*
+!backend/storage/playback/.gitkeep

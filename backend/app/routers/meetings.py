@@ -1,6 +1,12 @@
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    File,
+    HTTPException,
+    UploadFile,
+)
+from fastapi.responses import FileResponse
 
 from backend.app.schemas.meeting_analysis import MeetingRecord
 from backend.app.services.audio_extractor import extract_audio
@@ -15,7 +21,10 @@ from backend.app.services.meeting_repository import (
     save_meeting,
 )
 from backend.app.services.transcription import transcribe_audio
-
+from backend.app.services.playback_audio import (
+    create_playback_audio,
+    get_playback_path,
+)
 
 router = APIRouter(
     prefix="/meetings",
@@ -42,6 +51,8 @@ async def upload_meeting(
 
     uploaded_path = UPLOAD_DIRECTORY / stored_filename
     audio_path: Path | None = None
+    temporary_playback_path: Path | None = None
+    playback_was_saved = False
 
     try:
         audio_path = await extract_audio(uploaded_path)
@@ -51,6 +62,11 @@ async def upload_meeting(
 
         meeting_analysis = await analyze_transcript(transcript)
 
+        temporary_playback_path = await create_playback_audio(
+            audio_path,
+            uploaded_path.stem,
+        )
+        
         saved_meeting = await save_meeting(
             original_filename=str(
                 upload_result["original_filename"],
@@ -71,6 +87,15 @@ async def upload_meeting(
             analysis=meeting_analysis,
         )
 
+        final_playback_path = get_playback_path(
+            saved_meeting.id,
+        )
+
+        temporary_playback_path.replace(
+            final_playback_path,
+        )
+
+        playback_was_saved = True
         return MeetingRecord.model_validate(saved_meeting)
 
     finally:
@@ -92,7 +117,28 @@ async def get_meeting_history() -> list[MeetingRecord]:
         for meeting in meetings
     ]
 
+@router.get(
+    "/{meeting_id}/audio",
+    response_class=FileResponse,
+)
+async def get_meeting_audio(
+    meeting_id: int,
+) -> FileResponse:
+    await get_saved_meeting(meeting_id)
 
+    playback_path = get_playback_path(meeting_id)
+
+    if not playback_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="Playback audio is not available for this meeting.",
+        )
+
+    return FileResponse(
+    path=playback_path,
+    media_type="audio/mpeg",
+)
+    
 @router.get(
     "/{meeting_id}",
     response_model=MeetingRecord,
