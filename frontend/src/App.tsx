@@ -13,6 +13,7 @@ import type { MeetingRecord } from "./types/meeting";
 
 import "./App.css";
 import MeetingHistory from "./components/MeetingHistory";
+import TimestampedTranscript from "./components/TimestampedTranscript";
 
 type ConnectionStatus =
   | "checking"
@@ -330,10 +331,10 @@ function App() {
                 )}
               </article>
 
-              <details className="result-card transcript">
-                <summary>View transcript</summary>
-                <p>{meeting.transcript}</p>
-              </details>
+              <TimestampedTranscript
+                segments={meeting.segments}
+                fallbackTranscript={meeting.transcript}
+              />
             </>
           )}
         </section>

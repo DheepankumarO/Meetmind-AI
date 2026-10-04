@@ -29,7 +29,14 @@ const testMeeting = {
   content_type: "audio/wav",
   size_bytes: 1000,
   transcript: "The team discussed the MeetMind project.",
-  segments: [],
+  segments: [
+    {
+      segment_index: 0,
+      start_seconds: 0,
+      end_seconds: 6.36,
+      text: "The team discussed the MeetMind project.",
+    },
+  ],
   summary: "The team reviewed project progress.",
   key_topics: ["MeetMind", "Testing"],
   decisions: ["Add automated tests"],
@@ -136,6 +143,10 @@ it("shows that the backend is connected", async () => {
 
     expect(
       screen.getByText("Finish frontend tests"),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByText("00:00 – 00:06"),
     ).toBeInTheDocument();
   });
 
