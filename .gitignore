@@ -236,3 +236,6 @@ backend/storage/audio/*
 # Local SQLite database
 backend/storage/*.db
 backend/storage/*.db-*
+
+# Pytest-generated cache
+.pytest_cache/
