@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-
+from backend.app.schemas.transcription import TranscriptSegment
 
 class ActionItem(BaseModel):
     task: str = Field(
@@ -49,3 +49,7 @@ class MeetingRecord(MeetingAnalysis):
     language_probability: float
     duration_seconds: float
     created_at: datetime
+    
+    segments: list[TranscriptSegment] = Field(
+        default_factory=list,
+    )

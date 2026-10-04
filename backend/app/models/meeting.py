@@ -1,7 +1,16 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, Float, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.database import Base
 
@@ -33,6 +42,16 @@ class Meeting(Base):
     transcript: Mapped[str] = mapped_column(
         Text,
         nullable=False,
+    )
+    segments: Mapped[
+        list["MeetingTranscriptSegment"]
+    ] = relationship(
+        back_populates="meeting",
+        cascade="all, delete-orphan",
+        order_by=lambda: (
+            MeetingTranscriptSegment.segment_index
+        ),
+        lazy="selectin",
     )
 
     language: Mapped[str] = mapped_column(
@@ -77,4 +96,55 @@ class Meeting(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
+    )
+    
+    
+class MeetingTranscriptSegment(Base):
+    __tablename__ = "transcript_segments"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "meeting_id",
+            "segment_index",
+            name="uq_meeting_segment_index",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    meeting_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "meetings.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    segment_index: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    start_seconds: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
+    end_seconds: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
+    text: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    meeting: Mapped["Meeting"] = relationship(
+        back_populates="segments",
     )

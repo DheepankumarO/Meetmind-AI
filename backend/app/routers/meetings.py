@@ -47,13 +47,7 @@ async def upload_meeting(
         audio_path = await extract_audio(uploaded_path)
         transcription_result = await transcribe_audio(audio_path)
 
-        transcript = transcription_result["transcript"]
-
-        if not isinstance(transcript, str):
-            raise HTTPException(
-                status_code=500,
-                detail="The generated transcript is invalid.",
-            )
+        transcript = transcription_result.transcript
 
         meeting_analysis = await analyze_transcript(transcript)
 
@@ -68,13 +62,12 @@ async def upload_meeting(
             ),
             size_bytes=int(upload_result["size_bytes"]),
             transcript=transcript,
-            language=str(transcription_result["language"]),
-            language_probability=float(
-                transcription_result["language_probability"],
+            language=transcription_result.language,
+            language_probability=(
+                transcription_result.language_probability
             ),
-            duration_seconds=float(
-                transcription_result["duration_seconds"],
-            ),
+            duration_seconds=transcription_result.duration_seconds,
+            segments=transcription_result.segments,
             analysis=meeting_analysis,
         )
 

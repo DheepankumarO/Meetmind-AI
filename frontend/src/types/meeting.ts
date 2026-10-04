@@ -11,6 +11,7 @@ export type MeetingRecord = {
   content_type: string | null;
   size_bytes: number;
   transcript: string;
+  segments: TranscriptSegment[];
   language: string;
   language_probability: number;
   duration_seconds: number;
@@ -19,4 +20,11 @@ export type MeetingRecord = {
   decisions: string[];
   action_items: ActionItem[];
   created_at: string;
+};
+
+export type TranscriptSegment = {
+  segment_index: number;
+  start_seconds: number;
+  end_seconds: number;
+  text: string;
 };

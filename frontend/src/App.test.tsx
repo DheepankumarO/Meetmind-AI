@@ -23,9 +23,13 @@ vi.mock("./services/api", () => ({
 }));
 
 const testMeeting = {
+  status: "processed",
   id: 1,
   original_filename: "team-meeting.wav",
+  content_type: "audio/wav",
+  size_bytes: 1000,
   transcript: "The team discussed the MeetMind project.",
+  segments: [],
   summary: "The team reviewed project progress.",
   key_topics: ["MeetMind", "Testing"],
   decisions: ["Add automated tests"],
@@ -36,6 +40,8 @@ const testMeeting = {
       deadline: "Friday",
     },
   ],
+  language: "en",
+  language_probability: 0.99,
   duration_seconds: 42.5,
   created_at: "2026-09-30T20:00:00",
 } as MeetingRecord;
