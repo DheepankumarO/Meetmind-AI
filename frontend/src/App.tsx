@@ -14,7 +14,7 @@ import type { MeetingRecord } from "./types/meeting";
 import "./App.css";
 import MeetingHistory from "./components/MeetingHistory";
 import TimestampedTranscript from "./components/TimestampedTranscript";
-
+import AskMeeting from "./components/AskMeeting";
 type ConnectionStatus =
   | "checking"
   | "connected"
@@ -31,7 +31,10 @@ const ALLOWED_EXTENSIONS = [
 ];
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
-
+type PlaybackRequest = {
+  seconds: number;
+  requestId: number;
+};
 
 function App() {
   const [connectionStatus, setConnectionStatus] =
@@ -47,7 +50,8 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
+  const [playbackRequest, setPlaybackRequest] =
+  useState<PlaybackRequest | null>(null);
 
   useEffect(() => {
     getHealth()
@@ -110,6 +114,7 @@ function App() {
     try {
       const result = await uploadMeeting(selectedFile);
       setMeeting(result);
+      setPlaybackRequest(null);
         setHistoryRefreshKey((currentKey) => currentKey + 1);
     } catch (requestError) {
       setError(
@@ -331,11 +336,24 @@ function App() {
                 )}
               </article>
 
+              <AskMeeting
+                key={`ask-${meeting.id}`}
+                meetingId={meeting.id}
+                onSourceSelect={(seconds) => {
+                  setPlaybackRequest((currentRequest) => ({
+                    seconds,
+                    requestId:
+                      (currentRequest?.requestId ?? 0) + 1,
+                  }));
+                }}
+              />
+
               <TimestampedTranscript
                 key={meeting.id}
                 meetingId={meeting.id}
                 segments={meeting.segments}
                 fallbackTranscript={meeting.transcript}
+                seekRequest={playbackRequest}
               />
             </>
           )}
@@ -345,6 +363,7 @@ function App() {
         refreshKey={historyRefreshKey}
         onSelect={(savedMeeting) => {
           setMeeting(savedMeeting);
+          setPlaybackRequest(null);
 
           window.scrollTo({
             top: 0,

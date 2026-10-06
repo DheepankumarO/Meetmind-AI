@@ -1,4 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   beforeEach,
@@ -10,6 +14,7 @@ import {
 
 import App from "./App";
 import {
+  askMeeting,
   getHealth,
   getMeetings,
   uploadMeeting,
@@ -17,6 +22,7 @@ import {
 import type { MeetingRecord } from "./types/meeting";
 
 vi.mock("./services/api", () => ({
+  askMeeting: vi.fn(),
   getHealth: vi.fn(),
   getMeetings: vi.fn(),
   uploadMeeting: vi.fn(),
@@ -258,4 +264,151 @@ it("shows that the backend is connected", async () => {
     expect(playMock).toHaveBeenCalledTimes(1);
     expect(secondSegment).toHaveClass("active");
   });
+  it("answers a meeting question and plays its source", async () => {
+  const user = userEvent.setup();
+
+  vi.mocked(uploadMeeting).mockResolvedValue(
+    testMeeting,
+  );
+
+  vi.mocked(askMeeting).mockResolvedValue({
+    meeting_id: 1,
+    question: "What was decided?",
+    answer: "The team decided to add automated tests.",
+    answer_found: true,
+    sources: [
+      {
+        segment_index: 1,
+        start_seconds: 6.36,
+        end_seconds: 12.5,
+        text: (
+          "The team agreed to add automated tests."
+        ),
+      },
+    ],
+  });
+
+  render(<App />);
+
+  const file = new File(
+    ["audio"],
+    "team-meeting.wav",
+    {
+      type: "audio/wav",
+    },
+  );
+
+  await user.upload(
+    screen.getByLabelText(/choose file/i),
+    file,
+  );
+
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Process meeting",
+    }),
+  );
+
+  await user.type(
+    screen.getByLabelText("Question"),
+    "What was decided?",
+  );
+
+  await user.click(
+    screen.getByRole("button", {
+      name: "Ask",
+    }),
+  );
+
+  expect(askMeeting).toHaveBeenCalledWith(
+    1,
+    "What was decided?",
+  );
+
+  expect(
+    await screen.findByText(
+      "The team decided to add automated tests.",
+    ),
+  ).toBeInTheDocument();
+
+  expect(
+    screen.getByText("Answer found"),
+  ).toBeInTheDocument();
+
+  const sourceButton = screen.getByRole(
+    "button",
+    {
+      name: /play source at 00:06.*automated tests/i,
+    },
+  );
+
+  await user.click(sourceButton);
+
+  const audio = screen.getByLabelText(
+    "Meeting audio",
+  ) as HTMLAudioElement;
+
+  await waitFor(() => {
+    expect(audio.currentTime).toBeCloseTo(6.36);
+  });
+
+  expect(playMock).toHaveBeenCalled();
+});
+it("shows when an answer is absent from the meeting", async () => {
+  const user = userEvent.setup();
+
+  vi.mocked(uploadMeeting).mockResolvedValue(
+    testMeeting,
+  );
+
+  vi.mocked(askMeeting).mockResolvedValue({
+    meeting_id: 1,
+    question: "What was the weather?",
+    answer: "I couldn't find that in this meeting.",
+    answer_found: false,
+    sources: [],
+  });
+
+  render(<App />);
+
+  const file = new File(
+    ["audio"],
+    "team-meeting.wav",
+    {
+      type: "audio/wav",
+    },
+  );
+
+  await user.upload(
+    screen.getByLabelText(/choose file/i),
+    file,
+  );
+
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Process meeting",
+    }),
+  );
+
+  await user.type(
+    screen.getByLabelText("Question"),
+    "What was the weather?",
+  );
+
+  await user.click(
+    screen.getByRole("button", {
+      name: "Ask",
+    }),
+  );
+
+  expect(
+    await screen.findByText(
+      "I couldn't find that in this meeting.",
+    ),
+  ).toBeInTheDocument();
+
+  expect(
+    screen.getByText("Not found in meeting"),
+  ).toBeInTheDocument();
+});
 });

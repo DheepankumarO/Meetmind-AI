@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useRef,
   useState,
 } from "react";
@@ -6,11 +7,16 @@ import {
 import { getMeetingAudioUrl } from "../services/api";
 import type { TranscriptSegment } from "../types/meeting";
 
+type PlaybackRequest = {
+  seconds: number;
+  requestId: number;
+};
 
 type TimestampedTranscriptProps = {
   meetingId: number;
   segments: TranscriptSegment[];
   fallbackTranscript: string;
+  seekRequest: PlaybackRequest | null;
 };
 
 
@@ -46,9 +52,10 @@ function TimestampedTranscript({
   meetingId,
   segments,
   fallbackTranscript,
+  seekRequest,
 }: TimestampedTranscriptProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
-
+  const detailsRef = useRef<HTMLDetailsElement>(null);
   const [
     activeSegmentIndex,
     setActiveSegmentIndex,
@@ -97,10 +104,43 @@ function TimestampedTranscript({
       activeSegment?.segment_index ?? null,
     );
   }
+  useEffect(() => {
+  const audio = audioRef.current;
 
+  if (!audio || !seekRequest || audioUnavailable) {
+    return;
+  }
+
+  if (detailsRef.current) {
+    detailsRef.current.open = true;
+  }
+
+  audio.currentTime = seekRequest.seconds;
+
+  const selectedSegment = segments.find(
+    (segment) =>
+      seekRequest.seconds >= segment.start_seconds &&
+      seekRequest.seconds < segment.end_seconds,
+  );
+
+  setActiveSegmentIndex(
+    selectedSegment?.segment_index ?? null,
+  );
+
+  void audio.play().catch(() => {
+    setAudioUnavailable(true);
+  });
+  }, [
+    seekRequest,
+    segments,
+    audioUnavailable,
+  ]);
 
   return (
-    <details className="result-card transcript">
+    <details
+      ref={detailsRef}
+      className="result-card transcript"
+    >
       <summary>View timestamped transcript</summary>
 
       {!audioUnavailable ? (

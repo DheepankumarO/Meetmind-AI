@@ -28,3 +28,18 @@ export type TranscriptSegment = {
   end_seconds: number;
   text: string;
 };
+
+export type AnswerSource = {
+  segment_index: number;
+  start_seconds: number;
+  end_seconds: number;
+  text: string;
+};
+
+export type MeetingAnswer = {
+  meeting_id: number;
+  question: string;
+  answer: string;
+  answer_found: boolean;
+  sources: AnswerSource[];
+};

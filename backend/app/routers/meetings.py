@@ -26,6 +26,14 @@ from backend.app.services.playback_audio import (
     get_playback_path,
 )
 
+from backend.app.schemas.meeting_question import (
+    MeetingAnswer,
+    MeetingQuestion,
+)
+
+from backend.app.services.meeting_question_answerer import (
+    answer_meeting_question,
+)
 router = APIRouter(
     prefix="/meetings",
     tags=["Meetings"],
@@ -131,13 +139,32 @@ async def get_meeting_audio(
     if not playback_path.is_file():
         raise HTTPException(
             status_code=404,
-            detail="Playback audio is not available for this meeting.",
+            detail=(
+                "Playback audio is not available "
+                "for this meeting."
+            ),
         )
 
     return FileResponse(
-    path=playback_path,
-    media_type="audio/mpeg",
+        path=playback_path,
+        media_type="audio/mpeg",
+    )
+
+@router.post(
+    "/{meeting_id}/ask",
+    response_model=MeetingAnswer,
 )
+async def ask_meeting_question(
+    meeting_id: int,
+    request: MeetingQuestion,
+) -> MeetingAnswer:
+    meeting = await get_saved_meeting(meeting_id)
+
+    return await answer_meeting_question(
+        meeting_id=meeting.id,
+        question=request.question,
+        segments=meeting.segments,
+    )
 
 @router.get(
     "/{meeting_id}",

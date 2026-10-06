@@ -1,4 +1,7 @@
-import type { MeetingRecord } from "../types/meeting";
+import type {
+  MeetingAnswer,
+  MeetingRecord,
+} from "../types/meeting";
 
 
 const API_BASE_URL =
@@ -78,4 +81,22 @@ export function getMeetingAudioUrl(
   meetingId: number,
 ): string {
   return `${API_BASE_URL}/meetings/${meetingId}/audio`;
+}
+
+export function askMeeting(
+  meetingId: number,
+  question: string,
+): Promise<MeetingAnswer> {
+  return request<MeetingAnswer>(
+    `/meetings/${meetingId}/ask`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        question,
+      }),
+    },
+  );
 }
