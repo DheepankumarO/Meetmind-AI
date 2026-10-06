@@ -73,3 +73,9 @@ export function getMeeting(
     `/meetings/${meetingId}`,
   );
 }
+
+export function getMeetingAudioUrl(
+  meetingId: number,
+): string {
+  return `${API_BASE_URL}/meetings/${meetingId}/audio`;
+}

@@ -20,7 +20,13 @@ vi.mock("./services/api", () => ({
   getHealth: vi.fn(),
   getMeetings: vi.fn(),
   uploadMeeting: vi.fn(),
+  getMeetingAudioUrl: vi.fn(
+    (meetingId: number) =>
+      `http://127.0.0.1:8000/meetings/${meetingId}/audio`,
+  ),
 }));
+
+const playMock = vi.fn().mockResolvedValue(undefined);
 
 const testMeeting = {
   status: "processed",
@@ -35,6 +41,12 @@ const testMeeting = {
       start_seconds: 0,
       end_seconds: 6.36,
       text: "The team discussed the MeetMind project.",
+    },
+    {
+      segment_index: 1,
+      start_seconds: 6.36,
+      end_seconds: 12.5,
+      text: "The team agreed to add automated tests.",
     },
   ],
   summary: "The team reviewed project progress.",
@@ -56,6 +68,15 @@ const testMeeting = {
 describe("MeetMind application", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    Object.defineProperty(
+      HTMLMediaElement.prototype,
+      "play",
+      {
+        configurable: true,
+        value: playMock,
+      },
+    );
 
     vi.mocked(getHealth).mockResolvedValue({
       status: "healthy",
@@ -179,5 +200,62 @@ it("shows that the backend is connected", async () => {
   ).toHaveLength(2);
 
   expect(window.scrollTo).toHaveBeenCalled();
+  });
+
+  it("plays audio from the selected transcript timestamp", async () => {
+  const user = userEvent.setup();
+
+  vi.mocked(uploadMeeting).mockResolvedValue(
+    testMeeting,
+  );
+
+  render(<App />);
+
+  const file = new File(
+    ["audio"],
+    "team-meeting.wav",
+    {
+      type: "audio/wav",
+    },
+  );
+
+  await user.upload(
+    screen.getByLabelText(/choose file/i),
+    file,
+  );
+
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Process meeting",
+    }),
+  );
+
+  await user.click(
+      await screen.findByText(
+        "View timestamped transcript",
+      ),
+    );
+
+    const audio = screen.getByLabelText(
+      "Meeting audio",
+    ) as HTMLAudioElement;
+
+    expect(audio).toHaveAttribute(
+      "src",
+      "http://127.0.0.1:8000/meetings/1/audio",
+    );
+
+    const secondSegment = screen.getByRole(
+      "button",
+      {
+        name: /00:06.*00:12/i,
+      },
+    );
+
+    await user.click(secondSegment);
+
+    expect(audio.currentTime).toBeCloseTo(6.36);
+    expect(playMock).toHaveBeenCalledTimes(1);
+    expect(secondSegment).toHaveClass("active");
   });
 });

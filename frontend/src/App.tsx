@@ -332,6 +332,8 @@ function App() {
               </article>
 
               <TimestampedTranscript
+                key={meeting.id}
+                meetingId={meeting.id}
                 segments={meeting.segments}
                 fallbackTranscript={meeting.transcript}
               />
