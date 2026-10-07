@@ -43,3 +43,8 @@ export type MeetingAnswer = {
   answer_found: boolean;
   sources: AnswerSource[];
 };
+
+export type MeetingChatTurn = {
+  question: string;
+  answer: string;
+};

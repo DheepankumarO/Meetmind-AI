@@ -1,5 +1,4 @@
 import asyncio
-import re
 from collections.abc import Sequence
 
 from fastapi import HTTPException
@@ -13,47 +12,15 @@ from backend.app.schemas.meeting_question import (
     AnswerSource,
     GeneratedMeetingAnswer,
     MeetingAnswer,
+    MeetingChatTurn,
 )
 from backend.app.services.meeting_analyzer import (
     MODEL_NAME,
     OLLAMA_HOST,
 )
-
-MAX_CONTEXT_SEGMENTS = 10
-
-STOP_WORDS = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "at",
-    "be",
-    "did",
-    "do",
-    "does",
-    "for",
-    "from",
-    "how",
-    "i",
-    "in",
-    "is",
-    "it",
-    "of",
-    "on",
-    "or",
-    "the",
-    "this",
-    "to",
-    "was",
-    "were",
-    "what",
-    "when",
-    "where",
-    "which",
-    "who",
-    "why",
-    "with",
-}
+from backend.app.services.meeting_retriever import (
+    retrieve_relevant_segments,
+)
 
 SYSTEM_PROMPT = """
 You are Ask MeetMind, a grounded meeting assistant.
@@ -74,71 +41,6 @@ Rules:
 """
 
 
-def tokenize(text: str) -> set[str]:
-    words = re.findall(
-        r"[a-z0-9']+",
-        text.lower(),
-    )
-
-    return {
-        word
-        for word in words
-        if word not in STOP_WORDS and len(word) > 1
-    }
-
-
-def select_relevant_segments(
-    question: str,
-    segments: Sequence[MeetingTranscriptSegment],
-) -> list[MeetingTranscriptSegment]:
-    question_tokens = tokenize(question)
-
-    scored_segments: list[
-        tuple[int, MeetingTranscriptSegment]
-    ] = []
-
-    for segment in segments:
-        segment_tokens = tokenize(segment.text)
-
-        overlap_score = len(
-            question_tokens.intersection(segment_tokens),
-        )
-
-        scored_segments.append(
-            (overlap_score, segment),
-        )
-
-    matching_segments = [
-        item
-        for item in scored_segments
-        if item[0] > 0
-    ]
-
-    if matching_segments:
-        matching_segments.sort(
-            key=lambda item: (
-                -item[0],
-                item[1].segment_index,
-            ),
-        )
-
-        selected = [
-            segment
-            for _, segment in matching_segments[
-                :MAX_CONTEXT_SEGMENTS
-            ]
-        ]
-    else:
-        selected = list(
-            segments[:MAX_CONTEXT_SEGMENTS],
-        )
-
-    return sorted(
-        selected,
-        key=lambda segment: segment.segment_index,
-    )
-
-
 def build_context(
     segments: Sequence[MeetingTranscriptSegment],
 ) -> str:
@@ -157,11 +59,14 @@ def answer_meeting_question_sync(
     *,
     meeting_id: int,
     question: str,
+    history: Sequence[MeetingChatTurn],
     segments: Sequence[MeetingTranscriptSegment],
 ) -> MeetingAnswer:
-    selected_segments = select_relevant_segments(
-        question,
-        segments,
+    selected_segments = retrieve_relevant_segments(
+        meeting_id=meeting_id,
+        question=question,
+        history=history,
+        segments=segments,
     )
 
     if not selected_segments:
@@ -175,22 +80,41 @@ def answer_meeting_question_sync(
     context = build_context(selected_segments)
     client = Client(host=OLLAMA_HOST)
 
+    messages = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT,
+        },
+    ]
+
+    for turn in history[-3:]:
+        messages.extend(
+            [
+                {
+                    "role": "user",
+                    "content": turn.question,
+                },
+                {
+                    "role": "assistant",
+                    "content": turn.answer,
+                },
+            ]
+        )
+
+    messages.append(
+        {
+            "role": "user",
+            "content": (
+                f"Meeting context:\n\n{context}\n\n"
+                f"Current question:\n{question}"
+            ),
+        }
+    )
+
     try:
         response = client.chat(
             model=MODEL_NAME,
-            messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT,
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"Meeting context:\n\n{context}\n\n"
-                        f"Question:\n{question}"
-                    ),
-                },
-            ],
+            messages=messages,
             format=(
                 GeneratedMeetingAnswer.model_json_schema()
             ),
@@ -248,14 +172,22 @@ def answer_meeting_question_sync(
         for segment in [selected_by_index[index]]
     ]
 
-    if not generated_answer.answer_found:
+    answer_found = (
+        generated_answer.answer_found and bool(sources)
+    )
+
+    if not answer_found:
         sources = []
 
     return MeetingAnswer(
         meeting_id=meeting_id,
         question=question,
-        answer=generated_answer.answer,
-        answer_found=generated_answer.answer_found,
+        answer=(
+            generated_answer.answer
+            if answer_found
+            else "I couldn't find that in this meeting."
+        ),
+        answer_found=answer_found,
         sources=sources,
     )
 
@@ -264,11 +196,13 @@ async def answer_meeting_question(
     *,
     meeting_id: int,
     question: str,
+    history: Sequence[MeetingChatTurn],
     segments: Sequence[MeetingTranscriptSegment],
 ) -> MeetingAnswer:
     return await asyncio.to_thread(
         answer_meeting_question_sync,
         meeting_id=meeting_id,
         question=question,
+        history=history,
         segments=segments,
     )

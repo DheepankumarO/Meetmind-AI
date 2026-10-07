@@ -1,5 +1,6 @@
 import type {
   MeetingAnswer,
+  MeetingChatTurn,
   MeetingRecord,
 } from "../types/meeting";
 
@@ -86,6 +87,7 @@ export function getMeetingAudioUrl(
 export function askMeeting(
   meetingId: number,
   question: string,
+  history: MeetingChatTurn[] = [],
 ): Promise<MeetingAnswer> {
   return request<MeetingAnswer>(
     `/meetings/${meetingId}/ask`,
@@ -96,6 +98,7 @@ export function askMeeting(
       },
       body: JSON.stringify({
         question,
+        history,
       }),
     },
   );

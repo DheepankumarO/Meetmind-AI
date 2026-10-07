@@ -148,3 +148,55 @@ class MeetingTranscriptSegment(Base):
     meeting: Mapped["Meeting"] = relationship(
         back_populates="segments",
     )
+
+
+class MeetingTranscriptChunk(Base):
+    __tablename__ = "transcript_chunks"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "meeting_id",
+            "embedding_model",
+            "chunk_index",
+            name="uq_meeting_model_chunk_index",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+    meeting_id: Mapped[int] = mapped_column(
+        ForeignKey("meetings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    embedding_model: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+    chunk_index: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+    start_seconds: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+    end_seconds: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+    segment_indexes: Mapped[list[int]] = mapped_column(
+        JSON,
+        nullable=False,
+    )
+    text: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+    embedding: Mapped[list[float]] = mapped_column(
+        JSON,
+        nullable=False,
+    )

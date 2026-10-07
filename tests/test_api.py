@@ -96,10 +96,12 @@ def test_ask_meeting_returns_grounded_answer(
         *,
         meeting_id: int,
         question: str,
+        history: list[object],
         segments: list[object],
     ) -> MeetingAnswer:
         assert meeting_id == 7
         assert question == "What was decided?"
+        assert history == []
         assert segments == []
 
         return MeetingAnswer(

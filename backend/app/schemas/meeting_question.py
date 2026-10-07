@@ -1,11 +1,21 @@
 from pydantic import BaseModel, Field
 
 
+class MeetingChatTurn(BaseModel):
+    question: str = Field(min_length=2, max_length=500)
+    answer: str = Field(min_length=1, max_length=4000)
+
+
 class MeetingQuestion(BaseModel):
     question: str = Field(
         min_length=2,
         max_length=500,
         description="A question about the selected meeting.",
+    )
+    history: list[MeetingChatTurn] = Field(
+        default_factory=list,
+        max_length=6,
+        description="Recent questions and answers for follow-up context.",
     )
 
 

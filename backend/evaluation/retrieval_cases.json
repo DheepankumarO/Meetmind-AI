@@ -1,0 +1,48 @@
+{
+  "segments": [
+    {
+      "segment_index": 0,
+      "start_seconds": 0,
+      "end_seconds": 5,
+      "text": "The team reviewed progress on the MeetMind project."
+    },
+    {
+      "segment_index": 1,
+      "start_seconds": 5,
+      "end_seconds": 10,
+      "text": "Everyone agreed to ship the beta release on Friday, October 16."
+    },
+    {
+      "segment_index": 2,
+      "start_seconds": 10,
+      "end_seconds": 15,
+      "text": "Dheepan will finish the API tests before Thursday."
+    },
+    {
+      "segment_index": 3,
+      "start_seconds": 15,
+      "end_seconds": 20,
+      "text": "Maria will update the dashboard design next week."
+    },
+    {
+      "segment_index": 4,
+      "start_seconds": 20,
+      "end_seconds": 25,
+      "text": "The budget review is scheduled for next month."
+    }
+  ],
+  "questions": [
+    {
+      "question": "When will the beta be released?",
+      "expected_segment_indexes": [1]
+    },
+    {
+      "question": "Who is responsible for checking the API?",
+      "expected_segment_indexes": [2]
+    },
+    {
+      "question": "When will the finances be discussed?",
+      "expected_segment_indexes": [4]
+    }
+  ]
+}

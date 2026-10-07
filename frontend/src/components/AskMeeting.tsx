@@ -4,13 +4,22 @@ import {
 } from "react";
 
 import { askMeeting } from "../services/api";
-import type { MeetingAnswer } from "../types/meeting";
+import type {
+  MeetingAnswer,
+  MeetingChatTurn,
+} from "../types/meeting";
 
 
 type AskMeetingProps = {
   meetingId: number;
   onSourceSelect: (seconds: number) => void;
 };
+
+const SUGGESTED_QUESTIONS = [
+  "What decisions were made?",
+  "What are the action items?",
+  "Were any deadlines mentioned?",
+];
 
 
 function formatTimestamp(seconds: number): string {
@@ -34,8 +43,8 @@ function AskMeeting({
   onSourceSelect,
 }: AskMeetingProps) {
   const [question, setQuestion] = useState("");
-  const [answer, setAnswer] =
-    useState<MeetingAnswer | null>(null);
+  const [messages, setMessages] =
+    useState<MeetingAnswer[]>([]);
   const [isAsking, setIsAsking] = useState(false);
   const [error, setError] = useState<string | null>(
     null,
@@ -57,16 +66,24 @@ function AskMeeting({
     }
 
     setIsAsking(true);
-    setAnswer(null);
     setError(null);
 
     try {
+      const history: MeetingChatTurn[] = messages.slice(-6).map(
+        (message) => ({
+          question: message.question,
+          answer: message.answer,
+        }),
+      );
+
       const result = await askMeeting(
         meetingId,
         trimmedQuestion,
+        history,
       );
 
-      setAnswer(result);
+      setMessages((current) => [...current, result]);
+      setQuestion("");
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -91,9 +108,25 @@ function AskMeeting({
       </div>
 
       <p className="ask-description">
-        Ask a question about the selected meeting. Answers
-        use only its transcript.
+        Ask follow-up questions about this meeting. Semantic
+        search finds relevant transcript passages by meaning.
       </p>
+
+      <div className="suggested-questions">
+        {SUGGESTED_QUESTIONS.map((suggestion) => (
+          <button
+            type="button"
+            key={suggestion}
+            disabled={isAsking}
+            onClick={() => {
+              setQuestion(suggestion);
+              setError(null);
+            }}
+          >
+            {suggestion}
+          </button>
+        ))}
+      </div>
 
       <form
         className="ask-form"
@@ -139,52 +172,76 @@ function AskMeeting({
         <p className="ask-error">{error}</p>
       )}
 
-      {answer && (
-        <div
-          className={`meeting-answer ${
-            answer.answer_found
-              ? "answer-found"
-              : "answer-missing"
-          }`}
-        >
-          <span className="answer-status">
-            {answer.answer_found
-              ? "Answer found"
-              : "Not found in meeting"}
-          </span>
+      {messages.length > 0 && (
+        <div className="ask-conversation">
+          {messages.map((answer, messageIndex) => (
+            <div
+              className="ask-exchange"
+              key={`${answer.question}-${messageIndex}`}
+            >
+              <div className="user-question">
+                <strong>You</strong>
+                <p>{answer.question}</p>
+              </div>
 
-          <p>{answer.answer}</p>
+              <div
+                className={`meeting-answer ${
+                  answer.answer_found
+                    ? "answer-found"
+                    : "answer-missing"
+                }`}
+              >
+                <span className="answer-status">
+                  {answer.answer_found
+                    ? "Answer found"
+                    : "Not found in meeting"}
+                </span>
 
-          {answer.sources.length > 0 && (
-            <div className="answer-sources">
-              <strong>Sources</strong>
+                <p>{answer.answer}</p>
 
-              {answer.sources.map((source) => (
-                <button
-                    type="button"
-                    key={source.segment_index}
-                    aria-label={
-                        `Play source at ${
-                        formatTimestamp(source.start_seconds)
-                        }: ${source.text}`
-                    }
-                    onClick={() => {
-                        onSourceSelect(
-                        source.start_seconds,
-                        );
-                    }}
-                >
-                  <span>
-                    {formatTimestamp(
-                      source.start_seconds,
-                    )}
-                  </span>
+                {answer.sources.length > 0 && (
+                  <div className="answer-sources">
+                    <strong>Sources</strong>
 
-                  {source.text}
-                </button>
-              ))}
+                    {answer.sources.map((source) => (
+                      <button
+                        type="button"
+                        key={source.segment_index}
+                        aria-label={
+                          `Play source at ${
+                            formatTimestamp(
+                              source.start_seconds,
+                            )
+                          }: ${source.text}`
+                        }
+                        onClick={() => {
+                          onSourceSelect(
+                            source.start_seconds,
+                          );
+                        }}
+                      >
+                        <span>
+                          {formatTimestamp(
+                            source.start_seconds,
+                          )}
+                        </span>
+
+                        {source.text}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
+          ))}
+
+          <button
+            type="button"
+            className="clear-chat-button"
+            onClick={() => setMessages([])}
+          >
+            Clear conversation
+          </button>
         </div>
       )}
     </article>
