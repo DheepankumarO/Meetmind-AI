@@ -181,7 +181,7 @@ it("shows that the backend is connected", async () => {
     ).toBeInTheDocument();
 
     expect(
-      screen.getByText("Speaker 2"),
+      screen.getByLabelText("Rename Speaker 2"),
     ).toBeInTheDocument();
   });
 
