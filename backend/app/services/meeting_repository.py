@@ -164,3 +164,62 @@ async def get_saved_meeting(
         get_meeting_sync,
         meeting_id,
     )
+
+
+def rename_speaker_sync(
+    meeting_id: int,
+    current_name: str,
+    new_name: str,
+) -> Meeting:
+    with SessionLocal() as session:
+        try:
+            statement = (
+                select(Meeting)
+                .options(selectinload(Meeting.segments))
+                .where(Meeting.id == meeting_id)
+            )
+            meeting = session.scalar(statement)
+
+            if meeting is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Meeting not found.",
+                )
+
+            matching_segments = [
+                segment
+                for segment in meeting.segments
+                if segment.speaker == current_name
+            ]
+
+            if not matching_segments:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Speaker not found in this meeting.",
+                )
+
+            for segment in matching_segments:
+                segment.speaker = new_name
+
+            session.commit()
+            return meeting
+
+        except SQLAlchemyError as error:
+            session.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail="The speaker name could not be saved.",
+            ) from error
+
+
+async def rename_saved_speaker(
+    meeting_id: int,
+    current_name: str,
+    new_name: str,
+) -> Meeting:
+    return await asyncio.to_thread(
+        rename_speaker_sync,
+        meeting_id,
+        current_name,
+        new_name,
+    )

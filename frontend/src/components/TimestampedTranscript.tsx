@@ -2,10 +2,17 @@ import {
   useEffect,
   useRef,
   useState,
+  type FormEvent,
 } from "react";
 
-import { getMeetingAudioUrl } from "../services/api";
-import type { TranscriptSegment } from "../types/meeting";
+import {
+  getMeetingAudioUrl,
+  renameSpeaker,
+} from "../services/api";
+import type {
+  MeetingRecord,
+  TranscriptSegment,
+} from "../types/meeting";
 
 type PlaybackRequest = {
   seconds: number;
@@ -17,6 +24,7 @@ type TimestampedTranscriptProps = {
   segments: TranscriptSegment[];
   fallbackTranscript: string;
   seekRequest: PlaybackRequest | null;
+  onMeetingUpdated: (meeting: MeetingRecord) => void;
 };
 
 
@@ -53,6 +61,7 @@ function TimestampedTranscript({
   segments,
   fallbackTranscript,
   seekRequest,
+  onMeetingUpdated,
 }: TimestampedTranscriptProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const detailsRef = useRef<HTMLDetailsElement>(null);
@@ -65,6 +74,55 @@ function TimestampedTranscript({
     audioUnavailable,
     setAudioUnavailable,
   ] = useState(false);
+  const [speakerNames, setSpeakerNames] = useState<
+    Record<string, string>
+  >({});
+  const [speakerError, setSpeakerError] = useState<
+    string | null
+  >(null);
+  const [savingSpeaker, setSavingSpeaker] = useState<
+    string | null
+  >(null);
+
+  const speakers = Array.from(
+    new Set(segments.map((segment) => segment.speaker)),
+  );
+
+
+  async function handleSpeakerRename(
+    event: FormEvent<HTMLFormElement>,
+    currentName: string,
+  ) {
+    event.preventDefault();
+
+    const newName = speakerNames[currentName]?.trim();
+
+    if (!newName || newName === currentName) {
+      return;
+    }
+
+    setSavingSpeaker(currentName);
+    setSpeakerError(null);
+
+    try {
+      const updatedMeeting = await renameSpeaker(
+        meetingId,
+        currentName,
+        newName,
+      );
+
+      setSpeakerNames({});
+      onMeetingUpdated(updatedMeeting);
+    } catch (requestError) {
+      setSpeakerError(
+        requestError instanceof Error
+          ? requestError.message
+          : "The speaker name could not be saved.",
+      );
+    } finally {
+      setSavingSpeaker(null);
+    }
+  }
 
 
   async function playSegment(
@@ -161,6 +219,51 @@ function TimestampedTranscript({
         <p className="audio-unavailable">
           Playback audio is unavailable for this meeting.
         </p>
+      )}
+
+      {speakers.length > 0 && (
+        <div className="speaker-editor">
+          <h4>Rename speakers</h4>
+
+          {speakers.map((speaker) => (
+            <form
+              className="speaker-rename-form"
+              key={speaker}
+              onSubmit={(event) => {
+                void handleSpeakerRename(event, speaker);
+              }}
+            >
+              <strong>{speaker}</strong>
+
+              <input
+                aria-label={`Rename ${speaker}`}
+                maxLength={50}
+                placeholder="Enter speaker name"
+                value={speakerNames[speaker] ?? ""}
+                onChange={(event) => {
+                  setSpeakerNames((currentNames) => ({
+                    ...currentNames,
+                    [speaker]: event.target.value,
+                  }));
+                }}
+              />
+
+              <button
+                type="submit"
+                disabled={
+                  savingSpeaker !== null ||
+                  !speakerNames[speaker]?.trim()
+                }
+              >
+                {savingSpeaker === speaker ? "Saving…" : "Save"}
+              </button>
+            </form>
+          ))}
+
+          {speakerError && (
+            <p className="speaker-error">{speakerError}</p>
+          )}
+        </div>
       )}
 
       {segments.length > 0 ? (

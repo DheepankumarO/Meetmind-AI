@@ -103,3 +103,24 @@ export function askMeeting(
     },
   );
 }
+
+
+export function renameSpeaker(
+  meetingId: number,
+  currentName: string,
+  newName: string,
+): Promise<MeetingRecord> {
+  return request<MeetingRecord>(
+    `/meetings/${meetingId}/speakers`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        current_name: currentName,
+        new_name: newName,
+      }),
+    },
+  );
+}

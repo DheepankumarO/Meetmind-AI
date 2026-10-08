@@ -18,8 +18,10 @@ from backend.app.services.meeting_analyzer import analyze_transcript
 from backend.app.services.meeting_repository import (
     get_saved_meeting,
     list_saved_meetings,
+    rename_saved_speaker,
     save_meeting,
 )
+from backend.app.schemas.speaker import SpeakerRename
 from backend.app.services.transcription import transcribe_audio
 from backend.app.services.speaker_diarization import (
     diarize_transcript,
@@ -173,6 +175,23 @@ async def ask_meeting_question(
         history=request.history,
         segments=meeting.segments,
     )
+
+
+@router.patch(
+    "/{meeting_id}/speakers",
+    response_model=MeetingRecord,
+)
+async def rename_meeting_speaker(
+    meeting_id: int,
+    request: SpeakerRename,
+) -> MeetingRecord:
+    meeting = await rename_saved_speaker(
+        meeting_id,
+        request.current_name,
+        request.new_name,
+    )
+
+    return MeetingRecord.model_validate(meeting)
 
 @router.get(
     "/{meeting_id}",
