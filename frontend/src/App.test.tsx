@@ -17,6 +17,7 @@ import {
   askMeeting,
   getHealth,
   getMeetings,
+  renameSpeaker,
   uploadMeeting,
 } from "./services/api";
 import type { MeetingRecord } from "./types/meeting";
@@ -25,6 +26,7 @@ vi.mock("./services/api", () => ({
   askMeeting: vi.fn(),
   getHealth: vi.fn(),
   getMeetings: vi.fn(),
+  renameSpeaker: vi.fn(),
   uploadMeeting: vi.fn(),
   getMeetingAudioUrl: vi.fn(
     (meetingId: number) =>
@@ -179,7 +181,7 @@ it("shows that the backend is connected", async () => {
     ).toBeInTheDocument();
 
     expect(
-      screen.getByText("Speaker 2"),
+      screen.getByLabelText("Rename Speaker 2"),
     ).toBeInTheDocument();
   });
 
@@ -212,6 +214,59 @@ it("shows that the backend is connected", async () => {
   ).toHaveLength(2);
 
   expect(window.scrollTo).toHaveBeenCalled();
+  });
+
+  it("renames a speaker and updates the transcript", async () => {
+    const user = userEvent.setup();
+    const renamedMeeting: MeetingRecord = {
+      ...testMeeting,
+      segments: testMeeting.segments.map((segment) => ({
+        ...segment,
+        speaker:
+          segment.speaker === "Speaker 1"
+            ? "Dheepan"
+            : segment.speaker,
+      })),
+    };
+
+    vi.mocked(uploadMeeting).mockResolvedValue(testMeeting);
+    vi.mocked(renameSpeaker).mockResolvedValue(
+      renamedMeeting,
+    );
+
+    render(<App />);
+
+    await user.upload(
+      screen.getByLabelText(/choose file/i),
+      new File(["audio"], "team-meeting.wav", {
+        type: "audio/wav",
+      }),
+    );
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Process meeting",
+      }),
+    );
+    await user.click(
+      screen.getByText("View timestamped transcript"),
+    );
+
+    await user.type(
+      screen.getByLabelText("Rename Speaker 1"),
+      "Dheepan",
+    );
+    await user.click(
+      screen.getAllByRole("button", { name: "Save" })[0],
+    );
+
+    expect(renameSpeaker).toHaveBeenCalledWith(
+      1,
+      "Speaker 1",
+      "Dheepan",
+    );
+    expect(
+      await screen.findByLabelText("Rename Dheepan"),
+    ).toBeInTheDocument();
   });
 
   it("plays audio from the selected transcript timestamp", async () => {

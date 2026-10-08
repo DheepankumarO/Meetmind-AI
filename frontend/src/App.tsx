@@ -354,6 +354,12 @@ function App() {
                 segments={meeting.segments}
                 fallbackTranscript={meeting.transcript}
                 seekRequest={playbackRequest}
+                onMeetingUpdated={(updatedMeeting) => {
+                  setMeeting(updatedMeeting);
+                  setHistoryRefreshKey(
+                    (currentKey) => currentKey + 1,
+                  );
+                }}
               />
             </>
           )}

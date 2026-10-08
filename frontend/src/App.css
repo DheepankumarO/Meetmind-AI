@@ -421,6 +421,62 @@ h1 {
   font-size: 0.8rem;
 }
 
+.speaker-editor {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.07);
+}
+
+.speaker-editor h4 {
+  margin: 0 0 0.25rem;
+}
+
+.speaker-rename-form {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.speaker-rename-form input {
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #475569;
+  border-radius: 9px;
+  background: #0f172a;
+  color: #f8fafc;
+  font: inherit;
+}
+
+.speaker-rename-form button {
+  padding: 0.65rem 0.9rem;
+  border: 0;
+  border-radius: 9px;
+  background: #0ea5e9;
+  color: white;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.speaker-rename-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.speaker-error {
+  margin: 0;
+  color: #fda4af !important;
+}
+
+@media (max-width: 600px) {
+  .speaker-rename-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .transcript-segment {
   width: 100%;
   display: grid;
