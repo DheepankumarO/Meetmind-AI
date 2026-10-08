@@ -17,6 +17,27 @@ The embedding model can be changed with the
 `OLLAMA_EMBEDDING_MODEL` environment variable. Existing meetings are indexed
 automatically when they receive their first question.
 
+## Speaker diarization
+
+Speaker detection uses the local Pyannote Community-1 model. Install its
+optional dependencies:
+
+```powershell
+pip install -r backend/requirements-diarization.txt
+```
+
+Accept the model conditions at
+https://huggingface.co/pyannote/speaker-diarization-community-1, create a
+Hugging Face access token, and set it before starting the backend:
+
+```powershell
+$env:HUGGINGFACE_TOKEN="hf_your_token"
+$env:PYANNOTE_METRICS_ENABLED="0"
+```
+
+Without the optional package or token, meetings still process normally and
+all transcript lines use the fallback label `Speaker 1`.
+
 ## Run the backend
 
 ```powershell

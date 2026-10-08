@@ -8,6 +8,7 @@ class TranscriptSegment(BaseModel):
     start_seconds: float = Field(ge=0)
     end_seconds: float = Field(ge=0)
     text: str
+    speaker: str = "Speaker 1"
 
 
 class TranscriptionResult(BaseModel):

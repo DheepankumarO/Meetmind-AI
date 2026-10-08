@@ -27,6 +27,7 @@ export type TranscriptSegment = {
   start_seconds: number;
   end_seconds: number;
   text: string;
+  speaker: string;
 };
 
 export type AnswerSource = {

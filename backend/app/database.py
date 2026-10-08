@@ -1,5 +1,5 @@
 from pathlib import Path
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 
@@ -37,3 +37,18 @@ def create_db_and_tables() -> None:
     from backend.app.models import meeting
 
     Base.metadata.create_all(bind=engine)
+
+    segment_columns = {
+        column["name"]
+        for column in inspect(engine).get_columns(
+            "transcript_segments",
+        )
+    }
+
+    if "speaker" not in segment_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE transcript_segments "
+                "ADD COLUMN speaker VARCHAR(50) "
+                "NOT NULL DEFAULT 'Speaker 1'"
+            )

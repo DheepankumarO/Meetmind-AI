@@ -411,6 +411,16 @@ h1 {
   white-space: nowrap;
 }
 
+.segment-meta {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.segment-speaker {
+  color: #f0abfc;
+  font-size: 0.8rem;
+}
+
 .transcript-segment {
   width: 100%;
   display: grid;

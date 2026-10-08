@@ -48,6 +48,7 @@ def save_meeting_sync(
                         start_seconds=segment.start_seconds,
                         end_seconds=segment.end_seconds,
                         text=segment.text,
+                        speaker=segment.speaker,
                     )
                     for segment in segments
                 ],
