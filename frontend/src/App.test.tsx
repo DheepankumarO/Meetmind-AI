@@ -323,6 +323,7 @@ it("shows that the backend is connected", async () => {
   expect(askMeeting).toHaveBeenCalledWith(
     1,
     "What was decided?",
+    [],
   );
 
   expect(
@@ -409,6 +410,65 @@ it("shows when an answer is absent from the meeting", async () => {
 
   expect(
     screen.getByText("Not found in meeting"),
+  ).toBeInTheDocument();
+});
+
+it("sends earlier answers with a follow-up question", async () => {
+  const user = userEvent.setup();
+
+  vi.mocked(uploadMeeting).mockResolvedValue(testMeeting);
+  vi.mocked(askMeeting)
+    .mockResolvedValueOnce({
+      meeting_id: 1,
+      question: "What task was assigned?",
+      answer: "Automated testing was assigned.",
+      answer_found: true,
+      sources: [],
+    })
+    .mockResolvedValueOnce({
+      meeting_id: 1,
+      question: "Who owns that task?",
+      answer: "Dheepan owns the testing task.",
+      answer_found: true,
+      sources: [],
+    });
+
+  render(<App />);
+
+  await user.upload(
+    screen.getByLabelText(/choose file/i),
+    new File(["audio"], "team-meeting.wav", {
+      type: "audio/wav",
+    }),
+  );
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Process meeting",
+    }),
+  );
+
+  const questionInput = screen.getByLabelText("Question");
+  await user.type(questionInput, "What task was assigned?");
+  await user.click(screen.getByRole("button", { name: "Ask" }));
+  await screen.findByText("Automated testing was assigned.");
+
+  await user.type(questionInput, "Who owns that task?");
+  await user.click(screen.getByRole("button", { name: "Ask" }));
+
+  expect(askMeeting).toHaveBeenNthCalledWith(
+    2,
+    1,
+    "Who owns that task?",
+    [
+      {
+        question: "What task was assigned?",
+        answer: "Automated testing was assigned.",
+      },
+    ],
+  );
+
+  expect(
+    await screen.findByText("Dheepan owns the testing task."),
   ).toBeInTheDocument();
 });
 });

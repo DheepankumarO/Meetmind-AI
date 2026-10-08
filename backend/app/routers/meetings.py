@@ -163,6 +163,7 @@ async def ask_meeting_question(
     return await answer_meeting_question(
         meeting_id=meeting.id,
         question=request.question,
+        history=request.history,
         segments=meeting.segments,
     )
 
