@@ -21,6 +21,9 @@ from backend.app.services.meeting_repository import (
     save_meeting,
 )
 from backend.app.services.transcription import transcribe_audio
+from backend.app.services.speaker_diarization import (
+    diarize_transcript,
+)
 from backend.app.services.playback_audio import (
     create_playback_audio,
     get_playback_path,
@@ -65,6 +68,10 @@ async def upload_meeting(
     try:
         audio_path = await extract_audio(uploaded_path)
         transcription_result = await transcribe_audio(audio_path)
+        speaker_segments = await diarize_transcript(
+            audio_path,
+            transcription_result.segments,
+        )
 
         transcript = transcription_result.transcript
 
@@ -91,7 +98,7 @@ async def upload_meeting(
                 transcription_result.language_probability
             ),
             duration_seconds=transcription_result.duration_seconds,
-            segments=transcription_result.segments,
+            segments=speaker_segments,
             analysis=meeting_analysis,
         )
 

@@ -145,6 +145,13 @@ class MeetingTranscriptSegment(Base):
         nullable=False,
     )
 
+    speaker: Mapped[str] = mapped_column(
+        String(50),
+        default="Speaker 1",
+        server_default="Speaker 1",
+        nullable=False,
+    )
+
     meeting: Mapped["Meeting"] = relationship(
         back_populates="segments",
     )

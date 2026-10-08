@@ -47,12 +47,14 @@ const testMeeting = {
       start_seconds: 0,
       end_seconds: 6.36,
       text: "The team discussed the MeetMind project.",
+      speaker: "Speaker 1",
     },
     {
       segment_index: 1,
       start_seconds: 6.36,
       end_seconds: 12.5,
       text: "The team agreed to add automated tests.",
+      speaker: "Speaker 2",
     },
   ],
   summary: "The team reviewed project progress.",
@@ -174,6 +176,10 @@ it("shows that the backend is connected", async () => {
 
     expect(
       screen.getByText("00:00 – 00:06"),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByText("Speaker 2"),
     ).toBeInTheDocument();
   });
 

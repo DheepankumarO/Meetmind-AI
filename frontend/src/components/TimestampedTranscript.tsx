@@ -181,14 +181,19 @@ function TimestampedTranscript({
                   void playSegment(segment);
                 }}
               >
-                <span className="segment-time">
-                  {formatTimestamp(
-                    segment.start_seconds,
-                  )}
-                  {" – "}
-                  {formatTimestamp(
-                    segment.end_seconds,
-                  )}
+                <span className="segment-meta">
+                  <strong className="segment-speaker">
+                    {segment.speaker}
+                  </strong>
+                  <span className="segment-time">
+                    {formatTimestamp(
+                      segment.start_seconds,
+                    )}
+                    {" – "}
+                    {formatTimestamp(
+                      segment.end_seconds,
+                    )}
+                  </span>
                 </span>
 
                 <p>{segment.text}</p>
