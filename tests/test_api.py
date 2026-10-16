@@ -1,4 +1,7 @@
 import pytest
+from fastapi import HTTPException
+
+from backend.app.schemas.processing_job import ProcessingJobRecord
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
@@ -11,6 +14,7 @@ from backend.app.schemas.meeting_question import (
 )
 from backend.app.schemas.meeting_analysis import MeetingRecord
 from backend.app.schemas.transcription import TranscriptSegment
+
 
 @pytest.fixture
 def client() -> TestClient:
@@ -81,7 +85,7 @@ def test_missing_meeting_audio_returns_404(
     assert response.json() == {
         "detail": "Meeting not found.",
     }
-    
+
 def test_ask_meeting_returns_grounded_answer(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -226,3 +230,205 @@ def test_rename_speaker_rejects_empty_name(
     )
 
     assert response.status_code == 422
+
+def test_processing_job_status_is_available(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get_processing_job(
+        job_id: int,
+    ) -> SimpleNamespace:
+        assert job_id == 12
+
+        return SimpleNamespace(
+            id=job_id,
+            original_filename="meeting.wav",
+            status="failed",
+            stage="analyzing",
+            error_message="The analysis service is unavailable.",
+            retry_count=0,
+            meeting_id=None,
+            created_at="2026-10-13T00:00:00Z",
+            updated_at="2026-10-13T00:05:00Z",
+            checkpoint={"transcription": {"transcript": "Hello."}},
+            stored_filename="internal-recording.wav",
+        )
+
+    monkeypatch.setattr(
+        meetings_router,
+        "get_processing_job",
+        fake_get_processing_job,
+    )
+
+    response = client.get("/meetings/jobs/12")
+
+    assert response.status_code == 200
+
+    result = response.json()
+
+    # Validate the public response, including its timestamps.
+    ProcessingJobRecord.model_validate(result)
+
+    assert result["id"] == 12
+    assert result["status"] == "failed"
+    assert result["stage"] == "analyzing"
+    assert result["error_message"] == (
+        "The analysis service is unavailable."
+    )
+
+    # Internal processing data should stay out of this response.
+    assert "checkpoint" not in result
+    assert "stored_filename" not in result
+
+
+def test_missing_processing_job_returns_404(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get_processing_job(
+        job_id: int,
+    ) -> None:
+        raise HTTPException(
+            status_code=404,
+            detail="Processing job not found.",
+        )
+
+    monkeypatch.setattr(
+        meetings_router,
+        "get_processing_job",
+        fake_get_processing_job,
+    )
+
+    response = client.get("/meetings/jobs/999")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Processing job not found.",
+    }
+
+def test_failed_upload_preserves_recording_and_checkpoints(
+    client,
+    monkeypatch,
+    tmp_path,
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from fastapi import HTTPException
+
+    from backend.app.schemas.transcription import (
+        TranscriptSegment,
+        TranscriptionResult,
+    )
+    from backend.app.services import (
+        file_storage,
+        meeting_processor,
+    )
+
+    upload_directory = tmp_path / "uploads"
+    audio_path = tmp_path / "extracted.wav"
+    audio_path.write_bytes(b"temporary audio")
+
+    transcription = TranscriptionResult(
+        transcript="Hello team.",
+        segments=[
+            TranscriptSegment(
+                segment_index=0,
+                start_seconds=0,
+                end_seconds=2,
+                text="Hello team.",
+            ),
+        ],
+        language="en",
+        language_probability=1.0,
+        duration_seconds=2,
+    )
+
+    async def fake_get_processing_job(job_id):
+        recording = next(upload_directory.iterdir())
+
+        return SimpleNamespace(
+            id=job_id,
+            stored_filename=recording.name,
+            original_filename="meeting.wav",
+            content_type="audio/wav",
+            size_bytes=len(b"recording"),
+        )
+
+    monkeypatch.setattr(
+        file_storage,
+        "UPLOAD_DIRECTORY",
+        upload_directory,
+    )
+    monkeypatch.setattr(
+        meetings_router,
+        "UPLOAD_DIRECTORY",
+        upload_directory,
+    )
+    monkeypatch.setattr(
+        meeting_processor,
+        "UPLOAD_DIRECTORY",
+        upload_directory,
+    )
+
+    # Job creation happens in the router.
+    monkeypatch.setattr(
+        meetings_router,
+        "create_processing_job",
+        AsyncMock(return_value=SimpleNamespace(id=12)),
+    )
+
+    update_job = AsyncMock()
+
+    # Job lookup and processing now happen in the service.
+    replacements = {
+        "get_processing_job": fake_get_processing_job,
+        "update_processing_job": update_job,
+        "extract_audio": AsyncMock(return_value=audio_path),
+        "transcribe_audio": AsyncMock(return_value=transcription),
+        "diarize_transcript": AsyncMock(
+            return_value=transcription.segments,
+        ),
+        "analyze_transcript": AsyncMock(
+            side_effect=HTTPException(
+                status_code=503,
+                detail="The analysis service is unavailable.",
+            ),
+        ),
+    }
+
+    for name, replacement in replacements.items():
+        monkeypatch.setattr(
+            meeting_processor,
+            name,
+            replacement,
+        )
+
+    assert meeting_processor.update_processing_job is update_job
+
+    response = client.post(
+    "/meetings/upload",
+    files={
+        "file": ("meeting.wav", b"recording", "audio/wav"),
+        },
+    )
+
+    assert response.status_code == 503, response.text
+    assert response.headers["X-Processing-Job-ID"] == "12"
+
+    assert update_job.await_args.kwargs == {
+        "status": "failed",
+        "stage": "analyzing",
+        "error_message": "The analysis service is unavailable.",
+    }
+
+    assert any(
+        call.kwargs.get("checkpoint", {}).get("transcription")
+        == transcription.model_dump(mode="json")
+        for call in update_job.await_args_list
+    )
+
+    recordings = list(upload_directory.iterdir())
+    assert len(recordings) == 1
+    assert recordings[0].read_bytes() == b"recording"
+    assert not audio_path.exists()

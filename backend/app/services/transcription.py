@@ -10,7 +10,11 @@ from backend.app.schemas.transcription import (
     TranscriptSegment,
     TranscriptionResult,
 )
-
+from backend.app.schemas.transcription import (
+    TranscriptSegment,
+    TranscriptWord,
+    TranscriptionResult,
+)
 
 MODEL_SIZE = "small.en"
 
@@ -33,10 +37,12 @@ def transcribe_sync(
         str(audio_path),
         beam_size=5,
         vad_filter=True,
+        word_timestamps=True,
     )
 
     transcript_parts: list[str] = []
     transcript_segments: list[TranscriptSegment] = []
+    transcript_words: list[TranscriptWord] = []
 
     for segment in generated_segments:
         text = segment.text.strip()
@@ -55,10 +61,23 @@ def transcribe_sync(
             )
         )
 
+        for word in segment.words or []:
+            if not word.word.strip():
+                continue
+
+            transcript_words.append(
+                TranscriptWord(
+                    start_seconds=round(float(word.start), 2),
+                    end_seconds=round(float(word.end), 2),
+                    text=word.word,
+                )
+            )
+
     return TranscriptionResult(
         transcript=" ".join(transcript_parts),
         segments=transcript_segments,
         language=information.language,
+        words=transcript_words,
         language_probability=round(
             information.language_probability,
             4,

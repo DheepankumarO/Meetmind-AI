@@ -34,7 +34,8 @@ def create_db_and_tables() -> None:
         exist_ok=True,
     )
 
-    from backend.app.models import meeting
+    # Import models so SQLAlchemy knows which tables to create.
+    from backend.app.models import meeting, processing_job
 
     Base.metadata.create_all(bind=engine)
 

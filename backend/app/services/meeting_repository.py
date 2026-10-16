@@ -12,6 +12,7 @@ from backend.app.models.meeting import (
 )
 from backend.app.schemas.meeting_analysis import MeetingAnalysis
 from backend.app.schemas.transcription import TranscriptSegment
+from backend.app.models.processing_job import ProcessingJob
 
 def save_meeting_sync(
     *,
@@ -24,6 +25,7 @@ def save_meeting_sync(
     language_probability: float,
     duration_seconds: float,
     analysis: MeetingAnalysis,
+    processing_job_id: int | None = None,
 ) -> Meeting:
     with SessionLocal() as session:
         try:
@@ -55,22 +57,48 @@ def save_meeting_sync(
             )
 
             session.add(meeting)
-            session.commit()
-            statement = (
-                select(Meeting)
-                .options(selectinload(Meeting.segments))
-                .where(Meeting.id == meeting.id)
-            )
 
-            saved_meeting = session.scalar(statement)
-
-            if saved_meeting is None:
-                raise HTTPException(
-                    status_code=500,
-                    detail="The saved meeting could not be loaded.",
+            if processing_job_id is not None:
+                job = session.get(
+                    ProcessingJob,
+                    processing_job_id,
                 )
 
-            return saved_meeting
+                if job is None:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="Processing job not found.",
+                    )
+
+                if job.meeting_id is not None:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="This job already has a saved meeting.",
+                    )
+
+                session.flush()
+                job.meeting_id = meeting.id
+
+                session.commit()
+                statement = (
+                    select(Meeting)
+                    .options(selectinload(Meeting.segments))
+                    .where(Meeting.id == meeting.id)
+                )
+
+                saved_meeting = session.scalar(statement)
+
+                if saved_meeting is None:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="The saved meeting could not be loaded.",
+                    )
+
+                return saved_meeting
+
+        except HTTPException:
+            session.rollback()
+            raise
 
         except SQLAlchemyError as error:
             session.rollback()
@@ -92,6 +120,7 @@ async def save_meeting(
     language_probability: float,
     duration_seconds: float,
     analysis: MeetingAnalysis,
+    processing_job_id: int | None = None,
 ) -> Meeting:
     return await asyncio.to_thread(
         save_meeting_sync,
@@ -104,6 +133,7 @@ async def save_meeting(
         language_probability=language_probability,
         duration_seconds=duration_seconds,
         analysis=analysis,
+        processing_job_id=processing_job_id,
     )
 
 def list_saved_meetings_sync() -> list[Meeting]:
@@ -201,8 +231,12 @@ def rename_speaker_sync(
             for segment in matching_segments:
                 segment.speaker = new_name
 
-            session.commit()
-            return meeting
+                session.commit()
+                return meeting
+
+        except HTTPException:
+            session.rollback()
+            raise
 
         except SQLAlchemyError as error:
             session.rollback()

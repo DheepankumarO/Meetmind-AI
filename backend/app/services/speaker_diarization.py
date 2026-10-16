@@ -105,7 +105,10 @@ def diarize_transcript_sync(
     if pipeline is None:
         return segments
 
-    output = pipeline(str(audio_path))
+    output = pipeline(
+    str(audio_path),
+    num_speakers=2,
+    )
     annotation = output.exclusive_speaker_diarization
     turns = [
         SpeakerTurn(

@@ -83,11 +83,24 @@ function TimestampedTranscript({
   const [savingSpeaker, setSavingSpeaker] = useState<
     string | null
   >(null);
+  const [selectedSpeaker, setSelectedSpeaker] = useState("All");
 
   const speakers = Array.from(
     new Set(segments.map((segment) => segment.speaker)),
   );
+  const activeSpeaker =
+  selectedSpeaker === "All" ||
+  speakers.includes(selectedSpeaker)
+    ? selectedSpeaker
+    : "All";
 
+  const visibleSegments =
+    activeSpeaker === "All"
+      ? segments
+      : segments.filter(
+          (segment) =>
+            segment.speaker === activeSpeaker,
+        );
 
   async function handleSpeakerRename(
     event: FormEvent<HTMLFormElement>,
@@ -266,9 +279,42 @@ function TimestampedTranscript({
         </div>
       )}
 
+      {speakers.length > 1 && (
+        <div
+          className="speaker-filters"
+          role="group"
+          aria-label="Filter transcript by speaker"
+        >
+          <button
+            type="button"
+            className={
+              activeSpeaker === "All" ? "active" : ""
+            }
+            aria-pressed={activeSpeaker === "All"}
+            onClick={() => setSelectedSpeaker("All")}
+          >
+            All
+          </button>
+
+          {speakers.map((speaker) => (
+            <button
+              type="button"
+              key={speaker}
+              className={
+                activeSpeaker === speaker ? "active" : ""
+              }
+              aria-pressed={activeSpeaker === speaker}
+              onClick={() => setSelectedSpeaker(speaker)}
+            >
+              {speaker}
+            </button>
+          ))}
+        </div>
+      )}
+
       {segments.length > 0 ? (
         <div className="transcript-segments">
-          {segments.map((segment) => {
+          {visibleSegments.map((segment) => {
             const isActive =
               segment.segment_index === activeSegmentIndex;
 

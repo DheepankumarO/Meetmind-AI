@@ -1,9 +1,11 @@
+import logging
 from pathlib import Path
 
 from fastapi import (
     APIRouter,
     File,
     HTTPException,
+    Response,
     UploadFile,
 )
 from fastapi.responses import FileResponse
@@ -39,17 +41,46 @@ from backend.app.schemas.meeting_question import (
 from backend.app.services.meeting_question_answerer import (
     answer_meeting_question,
 )
+
+from backend.app.schemas.processing_job import ProcessingJobRecord
+from backend.app.services.processing_job_repository import (
+    create_processing_job,
+    get_processing_job,
+    update_processing_job,
+)
+
+from backend.app.services.meeting_processor import (
+    process_meeting_job,
+    remove_processing_file,
+)
+
 router = APIRouter(
     prefix="/meetings",
     tags=["Meetings"],
 )
 
+logger = logging.getLogger(__name__)
+
+
+def remove_processing_file(path: Path | None) -> None:
+    if path is None:
+        return
+
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning(
+            "Could not remove processing file %s",
+            path,
+            exc_info=True,
+        )
 
 @router.post(
     "/upload",
     response_model=MeetingRecord,
 )
 async def upload_meeting(
+    response: Response,
     file: UploadFile = File(...),
 ) -> MeetingRecord:
     upload_result = await save_upload(file)
@@ -63,64 +94,31 @@ async def upload_meeting(
         )
 
     uploaded_path = UPLOAD_DIRECTORY / stored_filename
-    audio_path: Path | None = None
-    temporary_playback_path: Path | None = None
-    playback_was_saved = False
+
+    original_filename = str(upload_result["original_filename"])
+    content_type = (
+        str(upload_result["content_type"])
+        if upload_result["content_type"] is not None
+        else None
+    )
+    size_bytes = int(upload_result["size_bytes"])
 
     try:
-        audio_path = await extract_audio(uploaded_path)
-        transcription_result = await transcribe_audio(audio_path)
-        speaker_segments = await diarize_transcript(
-            audio_path,
-            transcription_result.segments,
+        job = await create_processing_job(
+            original_filename=original_filename,
+            stored_filename=stored_filename,
+            content_type=content_type,
+            size_bytes=size_bytes,
         )
+    except Exception:
+        remove_processing_file(uploaded_path)
+        raise
 
-        transcript = transcription_result.transcript
+    result = await process_meeting_job(job.id)
 
-        meeting_analysis = await analyze_transcript(transcript)
+    response.headers["X-Processing-Job-ID"] = str(job.id)
 
-        temporary_playback_path = await create_playback_audio(
-            audio_path,
-            uploaded_path.stem,
-        )
-
-        saved_meeting = await save_meeting(
-            original_filename=str(
-                upload_result["original_filename"],
-            ),
-            content_type=(
-                str(upload_result["content_type"])
-                if upload_result["content_type"] is not None
-                else None
-            ),
-            size_bytes=int(upload_result["size_bytes"]),
-            transcript=transcript,
-            language=transcription_result.language,
-            language_probability=(
-                transcription_result.language_probability
-            ),
-            duration_seconds=transcription_result.duration_seconds,
-            segments=speaker_segments,
-            analysis=meeting_analysis,
-        )
-
-        final_playback_path = get_playback_path(
-            saved_meeting.id,
-        )
-
-        temporary_playback_path.replace(
-            final_playback_path,
-        )
-
-        playback_was_saved = True
-        return MeetingRecord.model_validate(saved_meeting)
-
-    finally:
-        uploaded_path.unlink(missing_ok=True)
-
-        if audio_path is not None:
-            audio_path.unlink(missing_ok=True)
-
+    return result
 
 @router.get(
     "",
@@ -133,6 +131,17 @@ async def get_meeting_history() -> list[MeetingRecord]:
         MeetingRecord.model_validate(meeting)
         for meeting in meetings
     ]
+
+@router.get(
+    "/jobs/{job_id}",
+    response_model=ProcessingJobRecord,
+)
+async def get_meeting_processing_job(
+    job_id: int,
+) -> ProcessingJobRecord:
+    job = await get_processing_job(job_id)
+
+    return ProcessingJobRecord.model_validate(job)
 
 @router.get(
     "/{meeting_id}/audio",
