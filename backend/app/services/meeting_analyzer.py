@@ -1,6 +1,7 @@
 import asyncio
 
 from fastapi import HTTPException
+from httpx import TimeoutException
 from ollama import Client
 from pydantic import ValidationError
 
@@ -9,6 +10,7 @@ from backend.app.schemas.meeting_analysis import MeetingAnalysis
 
 OLLAMA_HOST = "http://localhost:11434"
 MODEL_NAME = "qwen3:1.7b"
+ANALYSIS_TIMEOUT_SECONDS = 120.0
 
 SYSTEM_PROMPT = """
 You are a precise meeting-analysis assistant.
@@ -39,7 +41,10 @@ def analyze_transcript_sync(
             summary="No spoken content was detected.",
         )
 
-    client = Client(host=OLLAMA_HOST)
+    client = Client(
+        host=OLLAMA_HOST,
+        timeout=ANALYSIS_TIMEOUT_SECONDS,
+    )
 
     try:
         response = client.chat(
@@ -74,6 +79,12 @@ def analyze_transcript_sync(
         raise HTTPException(
             status_code=502,
             detail="The local model returned an invalid analysis.",
+        ) from error
+
+    except TimeoutException as error:
+        raise HTTPException(
+            status_code=504,
+            detail="The local meeting-analysis service timed out.",
         ) from error
 
     except Exception as error:
