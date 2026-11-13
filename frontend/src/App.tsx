@@ -6,7 +6,10 @@ import {
 } from "react";
 
 import {
+  ApiError,
   getHealth,
+  getProcessingJob,
+  retryMeetingAnalysis,
   uploadMeeting,
 } from "./services/api";
 import type { MeetingRecord } from "./types/meeting";
@@ -49,6 +52,8 @@ function App() {
     useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [retryJobId, setRetryJobId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playbackRequest, setPlaybackRequest] =
   useState<PlaybackRequest | null>(null);
@@ -61,6 +66,11 @@ function App() {
 
 
   function selectFile(file: File) {
+    if (isProcessing) {
+      return;
+    }
+
+    setRetryJobId(null);
     const filename = file.name.toLowerCase();
 
     const isSupported = ALLOWED_EXTENSIONS.some(
@@ -102,31 +112,67 @@ function App() {
   ) {
     event.preventDefault();
 
+    if (isProcessing || retryJobId !== null) {
+      return;
+    }
+
     if (!selectedFile) {
       setError("Choose a meeting recording first.");
       return;
     }
 
+    await runProcessing(() => uploadMeeting(selectedFile));
+  }
+
+  async function runProcessing(
+    process: () => Promise<MeetingRecord>,
+  ) {
     setIsProcessing(true);
+    setRetryJobId(null);
     setError(null);
     setMeeting(null);
-
     try {
-      const result = await uploadMeeting(selectedFile);
+      const result = await process();
       setMeeting(result);
       setPlaybackRequest(null);
-        setHistoryRefreshKey((currentKey) => currentKey + 1);
+      setHistoryRefreshKey((currentKey) => currentKey + 1);
     } catch (requestError) {
       setError(
         requestError instanceof Error
           ? requestError.message
           : "The meeting could not be processed.",
       );
+      if (
+        requestError instanceof ApiError &&
+        requestError.jobId !== null &&
+        requestError.status !== 409
+      ) {
+        try {
+          const job = await getProcessingJob(requestError.jobId);
+          if (job.status === "failed" && job.stage === "analyzing") {
+            setRetryJobId(requestError.jobId);
+          }
+        } catch {
+          // Keep the original error if job status cannot be loaded.
+        }
+      }
     } finally {
       setIsProcessing(false);
     }
   }
 
+  async function handleRetry() {
+    if (retryJobId === null || isProcessing) {
+      return;
+    }
+
+    setIsRetrying(true);
+    try {
+      await runProcessing(() => retryMeetingAnalysis(retryJobId));
+    } finally {
+      setIsRetrying(false);
+    }
+  }
 
   return (
     <main className="app">
@@ -187,6 +233,7 @@ function App() {
               <input
                 type="file"
                 accept=".mp3,.wav,.m4a,.mp4,.mov,.webm"
+                disabled={isProcessing}
                 onChange={(event) => {
                   const file = event.target.files?.[0];
 
@@ -212,7 +259,11 @@ function App() {
               <button
                 type="button"
                 className="remove-button"
-                onClick={() => setSelectedFile(null)}
+                onClick={() => {
+                  setSelectedFile(null);
+                  setRetryJobId(null);
+                  setError(null);
+                }}
                 disabled={isProcessing}
               >
                 Remove
@@ -222,19 +273,30 @@ function App() {
 
           {error && <p className="error-message">{error}</p>}
 
-          <button
-            className="process-button"
-            type="submit"
-            disabled={
-              !selectedFile ||
-              isProcessing ||
-              connectionStatus !== "connected"
-            }
-          >
-            {isProcessing
-              ? "Transcribing and analyzing…"
-              : "Process meeting"}
-          </button>
+          {retryJobId !== null || isRetrying ? (
+            <button
+              className="process-button"
+              type="button"
+              onClick={handleRetry}
+              disabled={isProcessing || connectionStatus !== "connected"}
+            >
+              {isRetrying ? "Retrying analysis…" : "Retry analysis"}
+            </button>
+          ) : (
+            <button
+              className="process-button"
+              type="submit"
+              disabled={
+                !selectedFile ||
+                isProcessing ||
+                connectionStatus !== "connected"
+              }
+            >
+              {isProcessing
+                ? "Transcribing and analyzing…"
+                : "Process meeting"}
+            </button>
+          )}
 
           {isProcessing && (
             <p className="processing-note">
