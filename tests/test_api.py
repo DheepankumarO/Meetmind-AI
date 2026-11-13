@@ -1,5 +1,6 @@
 import pytest
 from fastapi import HTTPException
+from httpx import ReadTimeout
 
 from backend.app.schemas.processing_job import ProcessingJobRecord
 from fastapi.testclient import TestClient
@@ -306,15 +307,34 @@ def test_missing_processing_job_returns_404(
         "detail": "Processing job not found.",
     }
 
+
+@pytest.mark.parametrize(
+    ("ollama_error", "status_code", "error_message"),
+    [
+        (
+            ConnectionError("Ollama is unavailable."),
+            503,
+            "The local meeting-analysis service is unavailable. "
+            "Make sure Ollama is running.",
+        ),
+        (
+            ReadTimeout("Ollama stopped responding."),
+            504,
+            "The local meeting-analysis service timed out.",
+        ),
+    ],
+    ids=["unavailable", "timeout"],
+)
 def test_failed_upload_preserves_recording_and_checkpoints(
     client,
     monkeypatch,
     tmp_path,
+    ollama_error,
+    status_code,
+    error_message,
 ):
     from types import SimpleNamespace
-    from unittest.mock import AsyncMock
-
-    from fastapi import HTTPException
+    from unittest.mock import AsyncMock, Mock
 
     from backend.app.schemas.transcription import (
         TranscriptSegment,
@@ -322,6 +342,7 @@ def test_failed_upload_preserves_recording_and_checkpoints(
     )
     from backend.app.services import (
         file_storage,
+        meeting_analyzer,
         meeting_processor,
     )
 
@@ -379,6 +400,10 @@ def test_failed_upload_preserves_recording_and_checkpoints(
     )
 
     update_job = AsyncMock()
+    ollama_client = Mock()
+    ollama_client.chat.side_effect = ollama_error
+    create_ollama_client = Mock(return_value=ollama_client)
+    monkeypatch.setattr(meeting_analyzer, "Client", create_ollama_client)
 
     # Job lookup and processing now happen in the service.
     replacements = {
@@ -388,12 +413,6 @@ def test_failed_upload_preserves_recording_and_checkpoints(
         "transcribe_audio": AsyncMock(return_value=transcription),
         "diarize_transcript": AsyncMock(
             return_value=transcription.segments,
-        ),
-        "analyze_transcript": AsyncMock(
-            side_effect=HTTPException(
-                status_code=503,
-                detail="The analysis service is unavailable.",
-            ),
         ),
     }
 
@@ -407,19 +426,21 @@ def test_failed_upload_preserves_recording_and_checkpoints(
     assert meeting_processor.update_processing_job is update_job
 
     response = client.post(
-    "/meetings/upload",
-    files={
-        "file": ("meeting.wav", b"recording", "audio/wav"),
+        "/meetings/upload",
+        files={
+            "file": ("meeting.wav", b"recording", "audio/wav"),
         },
     )
 
-    assert response.status_code == 503, response.text
+    assert response.status_code == status_code, response.text
+    assert response.json() == {"detail": error_message}
     assert response.headers["X-Processing-Job-ID"] == "12"
+    assert create_ollama_client.call_args.kwargs["timeout"] > 0
 
     assert update_job.await_args.kwargs == {
         "status": "failed",
         "stage": "analyzing",
-        "error_message": "The analysis service is unavailable.",
+        "error_message": error_message,
     }
 
     assert any(
