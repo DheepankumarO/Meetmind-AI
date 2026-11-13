@@ -14,19 +14,25 @@ import {
 
 import App from "./App";
 import {
+  ApiError,
   askMeeting,
   getHealth,
   getMeetings,
+  getProcessingJob,
   renameSpeaker,
+  retryMeetingAnalysis,
   uploadMeeting,
 } from "./services/api";
 import type { MeetingRecord } from "./types/meeting";
 
-vi.mock("./services/api", () => ({
+vi.mock("./services/api", async (importOriginal) => ({
+  ApiError: (await importOriginal<typeof import("./services/api")>()).ApiError,
   askMeeting: vi.fn(),
   getHealth: vi.fn(),
   getMeetings: vi.fn(),
+  getProcessingJob: vi.fn(),
   renameSpeaker: vi.fn(),
+  retryMeetingAnalysis: vi.fn(),
   uploadMeeting: vi.fn(),
   getMeetingAudioUrl: vi.fn(
     (meetingId: number) =>
@@ -183,6 +189,37 @@ it("shows that the backend is connected", async () => {
     expect(
       screen.getByLabelText("Rename Speaker 2"),
     ).toBeInTheDocument();
+  });
+
+  it("retries failed analysis without uploading the file again", async () => {
+    const user = userEvent.setup();
+    vi.mocked(uploadMeeting).mockRejectedValueOnce(
+      new ApiError("Analysis timed out.", 504, 12),
+    );
+    vi.mocked(getProcessingJob).mockResolvedValueOnce({
+      status: "failed",
+      stage: "analyzing",
+    });
+    vi.mocked(retryMeetingAnalysis).mockResolvedValueOnce(testMeeting);
+
+    render(<App />);
+    await screen.findByText("Backend connected");
+    await user.upload(
+      screen.getByLabelText(/choose file/i),
+      new File(["audio"], "team-meeting.wav", { type: "audio/wav" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Process meeting" }));
+
+    expect(await screen.findByText("Analysis timed out.")).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Retry analysis" }));
+
+    expect(getProcessingJob).toHaveBeenCalledWith(12);
+    expect(retryMeetingAnalysis).toHaveBeenCalledWith(12);
+    expect(uploadMeeting).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText("The team reviewed project progress."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Analysis timed out.")).not.toBeInTheDocument();
   });
 
   it("loads a saved meeting from history", async () => {

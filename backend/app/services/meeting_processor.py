@@ -2,8 +2,14 @@ import logging
 from pathlib import Path
 
 from fastapi import HTTPException
+from pydantic import TypeAdapter, ValidationError
 
+from backend.app.models.processing_job import ProcessingJob
 from backend.app.schemas.meeting_analysis import MeetingRecord
+from backend.app.schemas.transcription import (
+    TranscriptSegment,
+    TranscriptionResult,
+)
 from backend.app.services.audio_extractor import extract_audio
 from backend.app.services.file_storage import UPLOAD_DIRECTORY
 from backend.app.services.meeting_analyzer import analyze_transcript
@@ -13,6 +19,7 @@ from backend.app.services.playback_audio import (
     get_playback_path,
 )
 from backend.app.services.processing_job_repository import (
+    claim_analysis_retry,
     get_processing_job,
     update_processing_job,
 )
@@ -21,6 +28,8 @@ from backend.app.services.transcription import transcribe_audio
 
 
 logger = logging.getLogger(__name__)
+
+AnalysisInput = tuple[TranscriptionResult, list[TranscriptSegment]]
 
 
 def remove_processing_file(path: Path | None) -> None:
@@ -39,57 +48,101 @@ def remove_processing_file(path: Path | None) -> None:
 
 async def process_meeting_job(job_id: int) -> MeetingRecord:
     job = await get_processing_job(job_id)
+    return await _process_meeting_job(job)
 
+
+async def retry_meeting_analysis(job_id: int) -> MeetingRecord:
+    job = await get_processing_job(job_id)
+    if (
+        job.status != "failed"
+        or job.stage != "analyzing"
+        or job.meeting_id is not None
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Only a job that failed during analysis can be retried.",
+        )
+
+    checkpoint = job.checkpoint or {}
+    try:
+        transcription = TranscriptionResult.model_validate(
+            checkpoint.get("transcription"),
+        )
+        speaker_segments = TypeAdapter(list[TranscriptSegment]).validate_python(
+            checkpoint.get("speaker_segments"),
+        )
+    except ValidationError as error:
+        raise HTTPException(
+            status_code=409,
+            detail="The saved transcript or speaker labels are unavailable.",
+        ) from error
+
+    if not (UPLOAD_DIRECTORY / job.stored_filename).is_file():
+        raise HTTPException(
+            status_code=409,
+            detail="The original recording is missing. Upload it again to continue.",
+        )
+
+    await claim_analysis_retry(job.id, job.retry_count)
+    return await _process_meeting_job(job, (transcription, speaker_segments))
+
+
+async def _process_meeting_job(
+    job: ProcessingJob,
+    saved_analysis_input: AnalysisInput | None = None,
+) -> MeetingRecord:
     uploaded_path = UPLOAD_DIRECTORY / job.stored_filename
     audio_path: Path | None = None
     temporary_playback_path: Path | None = None
     processing_succeeded = False
-    stage = "extracting"
+    stage = "analyzing" if saved_analysis_input is not None else "extracting"
 
     try:
-        await update_processing_job(
-            job.id,
-            status="processing",
-            stage=stage,
-        )
-        audio_path = await extract_audio(uploaded_path)
+        if saved_analysis_input is not None:
+            transcription_result, speaker_segments = saved_analysis_input
+        else:
+            await update_processing_job(
+                job.id,
+                status="processing",
+                stage=stage,
+            )
+            audio_path = await extract_audio(uploaded_path)
 
-        stage = "transcribing"
-        await update_processing_job(
-            job.id,
-            status="processing",
-            stage=stage,
-        )
-        transcription_result = await transcribe_audio(audio_path)
+            stage = "transcribing"
+            await update_processing_job(
+                job.id,
+                status="processing",
+                stage=stage,
+            )
+            transcription_result = await transcribe_audio(audio_path)
 
-        stage = "diarizing"
-        await update_processing_job(
-            job.id,
-            status="processing",
-            stage=stage,
-            checkpoint={
-                "transcription": transcription_result.model_dump(
-                    mode="json",
-                ),
-            },
-        )
-        speaker_segments = await diarize_transcript(
-            audio_path,
-            transcription_result.segments,
-        )
+            stage = "diarizing"
+            await update_processing_job(
+                job.id,
+                status="processing",
+                stage=stage,
+                checkpoint={
+                    "transcription": transcription_result.model_dump(mode="json"),
+                },
+            )
+            speaker_segments = await diarize_transcript(
+                audio_path,
+                transcription_result.segments,
+            )
 
-        stage = "analyzing"
-        await update_processing_job(
-            job.id,
-            status="processing",
-            stage=stage,
-            checkpoint={
-                "speaker_segments": [
-                    segment.model_dump(mode="json")
-                    for segment in speaker_segments
-                ],
-            },
-        )
+            stage = "analyzing"
+            await update_processing_job(
+                job.id,
+                status="processing",
+                stage=stage,
+                checkpoint={
+                    "speaker_segments": [
+                        segment.model_dump(mode="json")
+                        for segment in speaker_segments
+                    ],
+                },
+            )
+
         meeting_analysis = await analyze_transcript(
             transcription_result.transcript,
         )
@@ -105,7 +158,7 @@ async def process_meeting_job(job_id: int) -> MeetingRecord:
         )
 
         temporary_playback_path = await create_playback_audio(
-            audio_path,
+            audio_path or uploaded_path,
             uploaded_path.stem,
         )
 

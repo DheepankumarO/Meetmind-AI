@@ -14,6 +14,25 @@ type HealthResponse = {
   status: string;
 };
 
+type ProcessingJob = {
+  status: string;
+  stage: string;
+};
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly jobId: number | null;
+
+  constructor(
+    message: string,
+    status: number,
+    jobId: number | null,
+  ) {
+    super(message);
+    this.status = status;
+    this.jobId = jobId;
+  }
+}
 
 async function request<T>(
   endpoint: string,
@@ -37,7 +56,12 @@ async function request<T>(
       // The server did not provide a JSON error response.
     }
 
-    throw new Error(message);
+    const jobId = Number(response.headers.get("X-Processing-Job-ID"));
+    throw new ApiError(
+      message,
+      response.status,
+      Number.isSafeInteger(jobId) && jobId > 0 ? jobId : null,
+    );
   }
 
   return response.json() as Promise<T>;
@@ -67,6 +91,16 @@ export function uploadMeeting(
 
 export function getMeetings(): Promise<MeetingRecord[]> {
   return request<MeetingRecord[]>("/meetings");
+}
+
+export function getProcessingJob(jobId: number): Promise<ProcessingJob> {
+  return request<ProcessingJob>(`/meetings/jobs/${jobId}`);
+}
+
+export function retryMeetingAnalysis(jobId: number): Promise<MeetingRecord> {
+  return request<MeetingRecord>(`/meetings/jobs/${jobId}/retry`, {
+    method: "POST",
+  });
 }
 
 

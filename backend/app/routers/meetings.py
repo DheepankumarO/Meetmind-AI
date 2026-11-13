@@ -52,6 +52,7 @@ from backend.app.services.processing_job_repository import (
 from backend.app.services.meeting_processor import (
     process_meeting_job,
     remove_processing_file,
+    retry_meeting_analysis,
 )
 
 router = APIRouter(
@@ -142,6 +143,20 @@ async def get_meeting_processing_job(
     job = await get_processing_job(job_id)
 
     return ProcessingJobRecord.model_validate(job)
+
+
+@router.post(
+    "/jobs/{job_id}/retry",
+    response_model=MeetingRecord,
+)
+async def retry_meeting_processing_job(
+    job_id: int,
+    response: Response,
+) -> MeetingRecord:
+    meeting = await retry_meeting_analysis(job_id)
+    response.headers["X-Processing-Job-ID"] = str(job_id)
+    return meeting
+
 
 @router.get(
     "/{meeting_id}/audio",

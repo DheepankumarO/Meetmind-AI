@@ -1,6 +1,7 @@
 import asyncio
 
 from fastapi import HTTPException
+from sqlalchemy import update
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.app.database import SessionLocal
@@ -79,7 +80,46 @@ async def get_processing_job(job_id: int) -> ProcessingJob:
         get_processing_job_sync,
         job_id,
     )
-    
+
+
+def claim_analysis_retry_sync(job_id: int, retry_count: int) -> None:
+    # Check the old state and claim the retry in one database write.
+    statement = (
+        update(ProcessingJob)
+        .where(
+            ProcessingJob.id == job_id,
+            ProcessingJob.status == "failed",
+            ProcessingJob.stage == "analyzing",
+            ProcessingJob.meeting_id.is_(None),
+            ProcessingJob.retry_count == retry_count,
+        )
+        .values(
+            status="processing",
+            error_message=None,
+            retry_count=ProcessingJob.retry_count + 1,
+        )
+    )
+
+    try:
+        with SessionLocal() as session:
+            result = session.execute(statement)
+            if result.rowcount != 1:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This job is no longer available to retry.",
+                )
+            session.commit()
+    except SQLAlchemyError as error:
+        raise HTTPException(
+            status_code=500,
+            detail="The retry could not be started.",
+        ) from error
+
+
+async def claim_analysis_retry(job_id: int, retry_count: int) -> None:
+    await asyncio.to_thread(claim_analysis_retry_sync, job_id, retry_count)
+
+
 def update_processing_job_sync(
     job_id: int,
     *,
