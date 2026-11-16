@@ -55,6 +55,13 @@ npm install
 npm run dev
 ```
 
+## Processing recordings
+
+The web app shows the current processing stage after uploading a recording.
+If analysis fails, use **Retry analysis** to reuse the saved transcript.
+Background processing runs inside the API server; keep that server running
+while a job is active.
+
 ## Tests
 
 ```powershell

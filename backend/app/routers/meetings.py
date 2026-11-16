@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     File,
     HTTPException,
     Response,
@@ -10,6 +11,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 
+from backend.app.models.processing_job import ProcessingJob
 from backend.app.schemas.meeting_analysis import MeetingRecord
 from backend.app.services.audio_extractor import extract_audio
 from backend.app.services.file_storage import (
@@ -76,14 +78,7 @@ def remove_processing_file(path: Path | None) -> None:
             exc_info=True,
         )
 
-@router.post(
-    "/upload",
-    response_model=MeetingRecord,
-)
-async def upload_meeting(
-    response: Response,
-    file: UploadFile = File(...),
-) -> MeetingRecord:
+async def save_uploaded_job(file: UploadFile) -> ProcessingJob:
     upload_result = await save_upload(file)
 
     stored_filename = upload_result["stored_filename"]
@@ -105,7 +100,7 @@ async def upload_meeting(
     size_bytes = int(upload_result["size_bytes"])
 
     try:
-        job = await create_processing_job(
+        return await create_processing_job(
             original_filename=original_filename,
             stored_filename=stored_filename,
             content_type=content_type,
@@ -115,11 +110,53 @@ async def upload_meeting(
         remove_processing_file(uploaded_path)
         raise
 
+
+async def process_uploaded_job_in_background(job_id: int) -> None:
+    try:
+        await process_meeting_job(job_id)
+    except HTTPException as error:
+        # The processor already logs and saves failures that occur during processing.
+        if "X-Processing-Job-ID" not in (error.headers or {}):
+            logger.exception("Could not start processing job %s", job_id)
+            await update_processing_job(
+                job_id,
+                status="failed",
+                stage="uploaded",
+                error_message="The meeting could not start processing.",
+            )
+
+
+@router.post(
+    "/upload",
+    response_model=MeetingRecord,
+)
+async def upload_meeting(
+    response: Response,
+    file: UploadFile = File(...),
+) -> MeetingRecord:
+    job = await save_uploaded_job(file)
     result = await process_meeting_job(job.id)
 
     response.headers["X-Processing-Job-ID"] = str(job.id)
 
     return result
+
+
+@router.post(
+    "/jobs",
+    status_code=202,
+    response_model=ProcessingJobRecord,
+)
+async def start_meeting_processing_job(
+    response: Response,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+) -> ProcessingJobRecord:
+    job = await save_uploaded_job(file)
+    background_tasks.add_task(process_uploaded_job_in_background, job.id)
+    response.headers["Location"] = f"/meetings/jobs/{job.id}"
+    return ProcessingJobRecord.model_validate(job)
+
 
 @router.get(
     "",

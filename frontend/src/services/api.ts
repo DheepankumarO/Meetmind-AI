@@ -14,9 +14,12 @@ type HealthResponse = {
   status: string;
 };
 
-type ProcessingJob = {
-  status: string;
+export type ProcessingJob = {
+  id: number;
+  status: "queued" | "processing" | "failed" | "interrupted" | "completed";
   stage: string;
+  error_message: string | null;
+  meeting_id: number | null;
 };
 
 export class ApiError extends Error {
@@ -73,15 +76,15 @@ export function getHealth(): Promise<HealthResponse> {
 }
 
 
-export function uploadMeeting(
+export function startMeetingProcessing(
   file: File,
-): Promise<MeetingRecord> {
+): Promise<ProcessingJob> {
   const formData = new FormData();
 
   formData.append("file", file);
 
-  return request<MeetingRecord>(
-    "/meetings/upload",
+  return request<ProcessingJob>(
+    "/meetings/jobs",
     {
       method: "POST",
       body: formData,
@@ -94,7 +97,7 @@ export function getMeetings(): Promise<MeetingRecord[]> {
 }
 
 export function getProcessingJob(jobId: number): Promise<ProcessingJob> {
-  return request<ProcessingJob>(`/meetings/jobs/${jobId}`);
+  return request<ProcessingJob>(`/meetings/jobs/${jobId}`, { cache: "no-store" });
 }
 
 export function retryMeetingAnalysis(jobId: number): Promise<MeetingRecord> {
