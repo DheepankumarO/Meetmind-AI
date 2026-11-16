@@ -8,9 +8,11 @@ import {
 import {
   ApiError,
   getHealth,
+  getMeeting,
   getProcessingJob,
   retryMeetingAnalysis,
-  uploadMeeting,
+  startMeetingProcessing,
+  type ProcessingJob,
 } from "./services/api";
 import type { MeetingRecord } from "./types/meeting";
 
@@ -34,6 +36,15 @@ const ALLOWED_EXTENSIONS = [
 ];
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
+const STATUS_INTERVAL_MS = 1000;
+const PROCESSING_LABELS: Record<string, string> = {
+  uploaded: "Waiting to process…",
+  extracting: "Extracting audio…",
+  transcribing: "Transcribing…",
+  diarizing: "Identifying speakers…",
+  analyzing: "Analyzing…",
+  saving: "Saving meeting…",
+};
 type PlaybackRequest = {
   seconds: number;
   requestId: number;
@@ -53,6 +64,8 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [pendingJobId, setPendingJobId] = useState<number | null>(null);
+  const [processingStatus, setProcessingStatus] = useState("");
   const [retryJobId, setRetryJobId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playbackRequest, setPlaybackRequest] =
@@ -66,7 +79,7 @@ function App() {
 
 
   function selectFile(file: File) {
-    if (isProcessing) {
+    if (isProcessing || pendingJobId !== null) {
       return;
     }
 
@@ -112,7 +125,7 @@ function App() {
   ) {
     event.preventDefault();
 
-    if (isProcessing || retryJobId !== null) {
+    if (isProcessing || retryJobId !== null || pendingJobId !== null) {
       return;
     }
 
@@ -121,7 +134,46 @@ function App() {
       return;
     }
 
-    await runProcessing(() => uploadMeeting(selectedFile));
+    setProcessingStatus("Uploading recording…");
+    await runProcessing(async () => {
+      const job = await startMeetingProcessing(selectedFile);
+      setPendingJobId(job.id);
+      return await waitForMeeting(job);
+    });
+  }
+
+  async function waitForMeeting(initialJob: ProcessingJob) {
+    let job = initialJob;
+    while (job.status === "queued" || job.status === "processing") {
+      setProcessingStatus(PROCESSING_LABELS[job.stage] ?? "Processing…");
+      await new Promise((resolve) => window.setTimeout(resolve, STATUS_INTERVAL_MS));
+      job = await getProcessingJob(job.id);
+    }
+
+    if (job.status === "completed" && job.meeting_id !== null) {
+      setProcessingStatus("Loading meeting…");
+      const result = await getMeeting(job.meeting_id);
+      setPendingJobId(null);
+      return result;
+    }
+
+    setPendingJobId(null);
+    if (
+      job.status === "failed" &&
+      job.stage === "analyzing" &&
+      job.meeting_id === null
+    ) {
+      setRetryJobId(job.id);
+    }
+    throw new Error(job.error_message ?? "The meeting could not be processed.");
+  }
+
+  async function handleCheckStatus() {
+    if (pendingJobId === null || isProcessing) {
+      return;
+    }
+    setProcessingStatus("Checking processing status…");
+    await runProcessing(async () => waitForMeeting(await getProcessingJob(pendingJobId)));
   }
 
   async function runProcessing(
@@ -149,7 +201,11 @@ function App() {
       ) {
         try {
           const job = await getProcessingJob(requestError.jobId);
-          if (job.status === "failed" && job.stage === "analyzing") {
+          if (
+            job.status === "failed" &&
+            job.stage === "analyzing" &&
+            job.meeting_id === null
+          ) {
             setRetryJobId(requestError.jobId);
           }
         } catch {
@@ -233,7 +289,7 @@ function App() {
               <input
                 type="file"
                 accept=".mp3,.wav,.m4a,.mp4,.mov,.webm"
-                disabled={isProcessing}
+                disabled={isProcessing || pendingJobId !== null}
                 onChange={(event) => {
                   const file = event.target.files?.[0];
 
@@ -264,7 +320,7 @@ function App() {
                   setRetryJobId(null);
                   setError(null);
                 }}
-                disabled={isProcessing}
+                disabled={isProcessing || pendingJobId !== null}
               >
                 Remove
               </button>
@@ -282,6 +338,14 @@ function App() {
             >
               {isRetrying ? "Retrying analysis…" : "Retry analysis"}
             </button>
+          ) : pendingJobId !== null && !isProcessing ? (
+            <button
+              className="process-button"
+              type="button"
+              onClick={handleCheckStatus}
+            >
+              Check processing status
+            </button>
           ) : (
             <button
               className="process-button"
@@ -292,16 +356,13 @@ function App() {
                 connectionStatus !== "connected"
               }
             >
-              {isProcessing
-                ? "Transcribing and analyzing…"
-                : "Process meeting"}
+              {isProcessing ? "Processing meeting…" : "Process meeting"}
             </button>
           )}
 
           {isProcessing && (
-            <p className="processing-note">
-              Local processing can take several minutes.
-              Keep this page open.
+            <p className="processing-note" role="status">
+              {isRetrying ? "Retrying analysis…" : processingStatus}
             </p>
           )}
         </form>

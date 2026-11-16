@@ -39,8 +39,9 @@ def retry_client(tmp_path, monkeypatch):
         engine.dispose()
 
 
+@pytest.mark.parametrize("background_upload", [False, True])
 def test_retry_reuses_saved_transcript_and_speaker_labels(
-    retry_client, tmp_path, monkeypatch,
+    retry_client, tmp_path, monkeypatch, background_upload,
 ):
     segment = TranscriptSegment(
         segment_index=0, start_seconds=0, end_seconds=2, text="Hello team.",
@@ -81,20 +82,32 @@ def test_retry_reuses_saved_transcript_and_speaker_labels(
     )
 
     upload = retry_client.post(
-        "/meetings/upload",
+        "/meetings/jobs" if background_upload else "/meetings/upload",
         files={"file": ("meeting.wav", b"original recording", "audio/wav")},
         headers={"Origin": "http://localhost:5173"},
     )
-    assert upload.status_code == 504
-    assert "X-Processing-Job-ID" in upload.headers["access-control-expose-headers"]
-    job_id = upload.headers["X-Processing-Job-ID"]
+    if background_upload:
+        assert upload.status_code == 202
+        accepted_job = upload.json()
+        assert (accepted_job["status"], accepted_job["stage"]) == ("queued", "uploaded")
+        job_id = accepted_job["id"]
+        assert upload.headers["Location"] == f"/meetings/jobs/{job_id}"
+    else:
+        assert upload.status_code == 504
+        assert "X-Processing-Job-ID" in upload.headers["access-control-expose-headers"]
+        job_id = int(upload.headers["X-Processing-Job-ID"])
+
     job_url = f"/meetings/jobs/{job_id}"
     retry_url = f"{job_url}/retry"
+    # TestClient waits for background work, but the HTTP response is already 202.
+    original_failure = retry_client.get(job_url).json()
+    assert (original_failure["status"], original_failure["stage"]) == ("failed", "analyzing")
+    assert original_failure["error_message"] == "The local meeting-analysis service timed out."
     assert not audio_path.exists()
 
     failed_retry = retry_client.post(retry_url)
     assert failed_retry.status_code == 503
-    assert failed_retry.headers["X-Processing-Job-ID"] == job_id
+    assert failed_retry.headers["X-Processing-Job-ID"] == str(job_id)
     failed_job = retry_client.get(job_url).json()
     assert (failed_job["status"], failed_job["stage"], failed_job["retry_count"]) == (
         "failed", "analyzing", 1,

@@ -14,14 +14,14 @@ import {
 
 import App from "./App";
 import {
-  ApiError,
   askMeeting,
   getHealth,
+  getMeeting,
   getMeetings,
   getProcessingJob,
   renameSpeaker,
   retryMeetingAnalysis,
-  uploadMeeting,
+  startMeetingProcessing,
 } from "./services/api";
 import type { MeetingRecord } from "./types/meeting";
 
@@ -29,16 +29,25 @@ vi.mock("./services/api", async (importOriginal) => ({
   ApiError: (await importOriginal<typeof import("./services/api")>()).ApiError,
   askMeeting: vi.fn(),
   getHealth: vi.fn(),
+  getMeeting: vi.fn(),
   getMeetings: vi.fn(),
   getProcessingJob: vi.fn(),
   renameSpeaker: vi.fn(),
   retryMeetingAnalysis: vi.fn(),
-  uploadMeeting: vi.fn(),
+  startMeetingProcessing: vi.fn(),
   getMeetingAudioUrl: vi.fn(
     (meetingId: number) =>
       `http://127.0.0.1:8000/meetings/${meetingId}/audio`,
   ),
 }));
+
+const completedJob = {
+  id: 12,
+  status: "completed",
+  stage: "completed",
+  meeting_id: 1,
+  error_message: null,
+} as const;
 
 const playMock = vi.fn().mockResolvedValue(undefined);
 
@@ -99,6 +108,8 @@ describe("MeetMind application", () => {
     });
 
     vi.mocked(getMeetings).mockResolvedValue([]);
+    vi.mocked(getMeeting).mockResolvedValue(testMeeting);
+    vi.mocked(startMeetingProcessing).mockResolvedValue(completedJob);
 });
 
 it("shows that the backend is connected", async () => {
@@ -145,9 +156,6 @@ it("shows that the backend is connected", async () => {
   it("uploads and displays a processed meeting", async () => {
     const user = userEvent.setup();
 
-    vi.mocked(uploadMeeting).mockResolvedValue(
-      testMeeting,
-    );
 
     render(<App />);
 
@@ -170,7 +178,7 @@ it("shows that the backend is connected", async () => {
       }),
     );
 
-    expect(uploadMeeting).toHaveBeenCalledWith(file);
+    expect(startMeetingProcessing).toHaveBeenCalledWith(file);
 
     expect(
       await screen.findByText(
@@ -191,14 +199,57 @@ it("shows that the backend is connected", async () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the current stage and loads the meeting when the job finishes", async () => {
+    const user = userEvent.setup();
+    vi.mocked(startMeetingProcessing).mockResolvedValueOnce({
+      ...completedJob,
+      status: "queued",
+      stage: "uploaded",
+      meeting_id: null,
+    });
+    vi.mocked(getProcessingJob)
+      .mockResolvedValueOnce({
+        ...completedJob,
+        status: "processing",
+        stage: "transcribing",
+        meeting_id: null,
+      })
+      .mockResolvedValueOnce(completedJob);
+
+    render(<App />);
+    await screen.findByText("Backend connected");
+    await user.upload(
+      screen.getByLabelText(/choose file/i),
+      new File(["audio"], "team-meeting.wav", { type: "audio/wav" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Process meeting" }));
+
+    expect(await screen.findByText("Waiting to process…")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Transcribing…", {}, { timeout: 2500 }),
+    ).toBeInTheDocument();
+    expect(getMeeting).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText(testMeeting.summary, {}, { timeout: 2500 }),
+    ).toBeInTheDocument();
+    expect(getProcessingJob).toHaveBeenCalledTimes(2);
+    expect(getMeeting).toHaveBeenCalledWith(testMeeting.id);
+  });
+
   it("retries failed analysis without uploading the file again", async () => {
     const user = userEvent.setup();
-    vi.mocked(uploadMeeting).mockRejectedValueOnce(
-      new ApiError("Analysis timed out.", 504, 12),
-    );
+    vi.mocked(startMeetingProcessing).mockResolvedValueOnce({
+      ...completedJob,
+      status: "processing",
+      stage: "analyzing",
+      meeting_id: null,
+    });
     vi.mocked(getProcessingJob).mockResolvedValueOnce({
+      ...completedJob,
       status: "failed",
       stage: "analyzing",
+      meeting_id: null,
+      error_message: "Analysis timed out.",
     });
     vi.mocked(retryMeetingAnalysis).mockResolvedValueOnce(testMeeting);
 
@@ -210,12 +261,15 @@ it("shows that the backend is connected", async () => {
     );
     await user.click(screen.getByRole("button", { name: "Process meeting" }));
 
-    expect(await screen.findByText("Analysis timed out.")).toBeInTheDocument();
+    expect(await screen.findByText("Analyzing…")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Analysis timed out.", {}, { timeout: 2500 }),
+    ).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "Retry analysis" }));
 
     expect(getProcessingJob).toHaveBeenCalledWith(12);
     expect(retryMeetingAnalysis).toHaveBeenCalledWith(12);
-    expect(uploadMeeting).toHaveBeenCalledTimes(1);
+    expect(startMeetingProcessing).toHaveBeenCalledTimes(1);
     expect(
       await screen.findByText("The team reviewed project progress."),
     ).toBeInTheDocument();
@@ -266,7 +320,6 @@ it("shows that the backend is connected", async () => {
       })),
     };
 
-    vi.mocked(uploadMeeting).mockResolvedValue(testMeeting);
     vi.mocked(renameSpeaker).mockResolvedValue(
       renamedMeeting,
     );
@@ -309,9 +362,6 @@ it("shows that the backend is connected", async () => {
   it("plays audio from the selected transcript timestamp", async () => {
   const user = userEvent.setup();
 
-  vi.mocked(uploadMeeting).mockResolvedValue(
-    testMeeting,
-  );
 
   render(<App />);
 
@@ -365,9 +415,6 @@ it("shows that the backend is connected", async () => {
   it("answers a meeting question and plays its source", async () => {
   const user = userEvent.setup();
 
-  vi.mocked(uploadMeeting).mockResolvedValue(
-    testMeeting,
-  );
 
   vi.mocked(askMeeting).mockResolvedValue({
     meeting_id: 1,
@@ -456,9 +503,6 @@ it("shows that the backend is connected", async () => {
 it("shows when an answer is absent from the meeting", async () => {
   const user = userEvent.setup();
 
-  vi.mocked(uploadMeeting).mockResolvedValue(
-    testMeeting,
-  );
 
   vi.mocked(askMeeting).mockResolvedValue({
     meeting_id: 1,
@@ -514,7 +558,6 @@ it("shows when an answer is absent from the meeting", async () => {
 it("sends earlier answers with a follow-up question", async () => {
   const user = userEvent.setup();
 
-  vi.mocked(uploadMeeting).mockResolvedValue(testMeeting);
   vi.mocked(askMeeting)
     .mockResolvedValueOnce({
       meeting_id: 1,
